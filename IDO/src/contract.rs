@@ -457,6 +457,7 @@ fn recv_tokens(
         user_info.total_payment = user_info.total_payment
             .checked_sub(user_ido_info.total_payment)
             .unwrap_or_default();
+        // Subtract from user_info's total tokens bought
         user_info.total_tokens_bought = user_info.total_tokens_bought
             .checked_sub(user_ido_info.total_tokens_bought)
             .unwrap_or_default();
@@ -638,8 +639,8 @@ fn withdraw(
     let mut submsgs = vec![];
     if !remaining_tokens.is_zero() {
         let transfer_msg = Cw20ExecuteMsg::TransferFrom {
-            owner: ido_admin.to_string(),
-            recipient: env.contract.address.to_string(),
+            owner: env.contract.address.to_string(),
+            recipient: ido_admin.to_string(),
             amount: remaining_tokens,
         };
 
@@ -667,8 +668,8 @@ fn withdraw(
             let token_contract = token_contract_canonical.to_string();
 
             let transfer_msg = Cw20ExecuteMsg::TransferFrom {
-                owner: ido_admin.to_string(),
-                recipient: env.contract.address.to_string(),
+                owner: env.contract.address.to_string(),
+                recipient: ido_admin.to_string(),
                 amount: payment_amount,
             };
 
