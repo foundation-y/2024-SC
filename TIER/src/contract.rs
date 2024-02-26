@@ -317,7 +317,8 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     WITHDRAWALS_LIST.save(deps.storage, info.sender.to_string(), &withdrawals)?;
 
     let validators = config.validators;
-    let amount = coin(amount - 4, ORAI);
+    let confirmed_amount = amount.checked_sub(4).unwrap();
+    let amount = coin(confirmed_amount, ORAI);
 
     let mut messages: Vec<SubMsg> = Vec::with_capacity(2);
 
