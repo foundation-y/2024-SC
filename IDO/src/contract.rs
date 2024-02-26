@@ -155,6 +155,10 @@ fn change_admin(
     info: MessageInfo,
     admin: String
 ) -> Result<Response, ContractError> {
+    // Validate new admin address
+    let validated = deps.api.addr_validate(&admin).unwrap();
+    assert_eq!(validated, admin);
+
     assert_admin(&deps, &info.sender.to_string())?;
 
     let mut config = Config::load(deps.storage)?;
