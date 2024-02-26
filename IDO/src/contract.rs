@@ -217,14 +217,14 @@ fn start_ido(
     }
 
     if ido.price == 0 {
-        return Err(ContractError::Std(StdError::generic_err("Ido price should be initialized")));
+        return Err(ContractError::Std(StdError::generic_err("Ido price should not be ZERO!")));
     }
     if env.block.time.seconds() >= ido.end_time {
         return Err(ContractError::Std(StdError::generic_err("Ido ends in the past")));
     }
 
     if ido.soft_cap == 0 {
-        return Err(ContractError::Std(StdError::generic_err("soft_cap should be initialized.")));
+        return Err(ContractError::Std(StdError::generic_err("soft_cap should not be ZERO!")));
     }
 
     if ido.soft_cap > ido.total_tokens_amount {
