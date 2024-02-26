@@ -457,7 +457,7 @@ fn recv_tokens(
         user_info.total_payment = user_info.total_payment
             .checked_sub(user_ido_info.total_payment)
             .unwrap_or_default();
-        user_info.total_tokens_bought = user_info.total_payment
+        user_info.total_tokens_bought = user_info.total_tokens_bought
             .checked_sub(user_ido_info.total_tokens_bought)
             .unwrap_or_default();
         let refund_amount = user_ido_info.total_payment;
