@@ -1,6 +1,6 @@
 use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -19,9 +19,9 @@ pub enum ContractStatus {
 
 impl From<u8> for ContractStatus {
     fn from(status: u8) -> Self {
-        if status == ContractStatus::Active as u8 {
+        if status == (ContractStatus::Active as u8) {
             ContractStatus::Active
-        } else if status == ContractStatus::Stopped as u8 {
+        } else if status == (ContractStatus::Stopped as u8) {
             ContractStatus::Stopped
         } else {
             panic!("Wrong status");
@@ -58,7 +58,8 @@ pub enum ExecuteMsg {
         recipient: Option<String>,
     },
     Redelegate {
-        validator_address: String,
+        new_validator_address: String,
+        old_validator_address: String,
         recipient: Option<String>,
     },
 }

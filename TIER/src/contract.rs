@@ -99,8 +99,15 @@ pub fn execute(
         ExecuteMsg::WithdrawRewards { recipient, .. } => {
             try_withdraw_rewards(deps, env, info, recipient)
         }
-        ExecuteMsg::Redelegate { validator_address, recipient, .. } =>
-            try_redelegate(deps, env, info, validator_address, recipient),
+        ExecuteMsg::Redelegate { new_validator_address, old_validator_address, recipient, .. } =>
+            try_redelegate(
+                deps,
+                env,
+                info,
+                new_validator_address,
+                old_validator_address,
+                recipient
+            ),
     };
 
     return response;
@@ -296,7 +303,7 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         ..Default::default()
     });
 
-    let amount = user_info.orai_deposit;
+    let amount: u128 = user_info.orai_deposit;
 
     USER_INFOS.remove(deps.storage, info.sender.to_string());
 
@@ -470,7 +477,8 @@ pub fn try_redelegate(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    validator_address: String,
+    new_validator_address: String,
+    old_validator_address: String,
     recipient: Option<String>
 ) -> Result<Response, ContractError> {
     let mut config: Config = CONFIG_ITEM.load(deps.storage)?;
@@ -478,16 +486,38 @@ pub fn try_redelegate(
         return Err(ContractError::Std(StdError::generic_err("Unauthorized")));
     }
 
-    let first_validator = &config.validators[0];
-    let old_validator = first_validator.clone().address;
-    let delegation = utils::query_delegation(&deps, &env, &old_validator);
+    // Validate new and old validator addresses
+    let validated_new_one = deps.api.addr_validate(&new_validator_address).unwrap();
+    assert_eq!(validated_new_one, new_validator_address);
+    let validated_old_one = deps.api.addr_validate(&old_validator_address).unwrap();
+    assert_eq!(validated_old_one, old_validator_address);
 
-    if old_validator == validator_address {
+    // Check if the old_validator_address is in the contract's validators
+    if config.validators.iter().any(|validator| validator.address != old_validator_address) {
+        return Err(
+            ContractError::Std(
+                StdError::generic_err(
+                    "The address of the validator you will replace does not exist in the state of the contract."
+                )
+            )
+        );
+    }
+
+    let delegation = utils::query_delegation(&deps, &env, &old_validator_address);
+
+    if old_validator_address == new_validator_address {
         return Err(ContractError::Std(StdError::generic_err("Redelegation to the same validator")));
     }
 
     if delegation.is_err() {
-        config.validators[0].address = validator_address;
+        // Replace old_validator_address with new_validator_address
+        if
+            let Some(position) = config.validators
+                .iter()
+                .position(|validator| validator.address == old_validator_address)
+        {
+            config.validators[position].address = new_validator_address.clone();
+        }
         CONFIG_ITEM.save(deps.storage, &config)?;
 
         let answer = to_json_binary(
@@ -511,15 +541,22 @@ pub fn try_redelegate(
         );
     }
 
-    config.validators[0].address = validator_address.clone();
+    // Replace old_validator_address with new_validator_address
+    if
+        let Some(position) = config.validators
+            .iter()
+            .position(|validator| validator.address == old_validator_address)
+    {
+        config.validators[position].address = new_validator_address.clone();
+    }
     CONFIG_ITEM.save(deps.storage, &config)?;
 
     let mut messages = Vec::with_capacity(2);
     if can_withdraw != 0 {
         let admin = config.admin;
         let _recipient = recipient.unwrap_or(admin);
-        let withdraw_msg = DistributionMsg::WithdrawDelegatorReward {
-            validator: old_validator.clone(),
+        let withdraw_msg: DistributionMsg = DistributionMsg::WithdrawDelegatorReward {
+            validator: old_validator_address.clone(),
         };
 
         let msg = CosmosMsg::Distribution(withdraw_msg);
@@ -529,8 +566,8 @@ pub fn try_redelegate(
 
     let coin = coin(can_redelegate, ORAI);
     let redelegate_msg = StakingMsg::Redelegate {
-        src_validator: old_validator,
-        dst_validator: validator_address,
+        src_validator: old_validator_address,
+        dst_validator: new_validator_address,
         amount: coin,
     };
 
