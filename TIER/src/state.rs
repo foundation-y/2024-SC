@@ -1,9 +1,13 @@
 use crate::msg::{
-    ContractStatus, OraiswapContract, QueryResponse, SerializedWithdrawals, ValidatorWithWeight,
+    ContractStatus,
+    OraiswapContract,
+    QueryResponse,
+    SerializedWithdrawals,
+    ValidatorWithWeight,
 };
-use cosmwasm_std::{StdError, StdResult, Storage, Uint128};
-use cw_storage_plus::{Item, Map};
-use serde::{Deserialize, Serialize};
+use cosmwasm_std::{ StdError, StdResult, Storage, Uint128 };
+use cw_storage_plus::{ Item, Map };
+use serde::{ Deserialize, Serialize };
 
 pub const CONFIG_ITEM: Item<Config> = Item::new("config");
 pub const WITHDRAWALS_LIST: Map<String, Vec<UserWithdrawal>> = Map::new("withdraw"); //Deque<UserWithdrawal> = Deque::new("withdraw");
@@ -20,6 +24,7 @@ pub struct Config {
     pub status: u8,
     pub usd_deposits: Vec<u128>,
     pub oraiswap_contract: OraiswapContract,
+    pub stable_denom: Vec<String>,
 }
 
 impl Config {
@@ -72,11 +77,11 @@ impl Config {
             validators: self.validators.clone(),
             oraiswap_contract: self.oraiswap_contract.clone(),
             status: self.status.into(),
-            usd_deposits: self
-                .usd_deposits
+            usd_deposits: self.usd_deposits
                 .iter()
                 .map(|d| Uint128::from(*d))
                 .collect(),
+            stable_denom: self.stable_denom.clone(),
         });
     }
 }

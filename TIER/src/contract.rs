@@ -74,6 +74,7 @@ pub fn instantiate(
         validators: msg.validators,
         usd_deposits: deposits,
         oraiswap_contract: msg.oraiswap_contract,
+        stable_denom: msg.stable_denom.unwrap_or_default(),
     };
 
     CONFIG_ITEM.save(deps.storage, &initial_config)?;
@@ -177,6 +178,9 @@ pub fn try_change_status(
 }
 
 pub fn get_received_funds(_deps: &DepsMut, info: &MessageInfo) -> Result<Coin, ContractError> {
+    let config = CONFIG_ITEM.load(_deps.storage)?;
+    config.assert_contract_active()?;
+
     match info.funds.get(0) {
         None => {
             return Err(ContractError::Std(StdError::generic_err("No Funds")));
@@ -189,7 +193,10 @@ pub fn get_received_funds(_deps: &DepsMut, info: &MessageInfo) -> Result<Coin, C
 
             /* Allow to receive only token denomination defined
             on contract instantiation "config.stable_denom" */
-            if received.denom.clone() != "orai" {
+            if
+                received.denom.clone() != "orai" ||
+                config.stable_denom.contains(&received.denom.clone()) == false
+            {
                 return Err(ContractError::Std(StdError::generic_err("Unsopported token")));
             }
 
@@ -618,6 +625,7 @@ pub fn query_withdrawals(
     let withdrawals = WITHDRAWALS_LIST.may_load(deps.storage, address)?.unwrap_or_default();
     let amount = withdrawals.len();
 
+    // The number of withdrawals can't exceed 50.
     let start = start.unwrap_or(0);
     let limit = limit.unwrap_or(50);
 

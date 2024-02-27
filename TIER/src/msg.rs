@@ -36,6 +36,7 @@ pub struct InstantiateMsg {
     pub validators: Vec<ValidatorWithWeight>,
     pub deposits: Vec<Uint128>,
     pub oraiswap_contract: OraiswapContract,
+    pub stable_denom: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -128,6 +129,7 @@ pub enum QueryResponse {
         usd_deposits: Vec<Uint128>,
         min_tier: u8,
         oraiswap_contract: OraiswapContract,
+        stable_denom: Vec<String>,
     },
     UserInfo {
         tier: u8,
