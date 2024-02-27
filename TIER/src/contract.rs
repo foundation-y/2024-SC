@@ -156,13 +156,23 @@ pub fn try_change_status(
         return Err(ContractError::Std(StdError::generic_err("Unauthorized")));
     }
 
-    CONFIG_ITEM.update(
-        deps.storage,
-        |mut exists| -> StdResult<_> {
-            exists.status = status as u8;
-            Ok(exists)
-        }
-    )?;
+    // Check the status is not set to the same value
+    if status == config.status.into() {
+        return Err(
+            ContractError::Std(
+                StdError::generic_err("Trying to change the status to the same value...")
+            )
+        );
+    } else {
+        CONFIG_ITEM.update(
+            deps.storage,
+            |mut exists| -> StdResult<_> {
+                exists.status = status as u8;
+                Ok(exists)
+            }
+        )?;
+    }
+
     Ok(Response::new().add_attribute("action", "changed status"))
 }
 
