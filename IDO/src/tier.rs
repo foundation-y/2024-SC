@@ -55,9 +55,20 @@ mod query {
         },
     }
 
-    fn find_tier_in_metadata(metadata: Metadata) -> Option<u8> {
+    fn find_tier_in_metadata(config: &Config, metadata: Metadata) -> Option<u8> {
         let attrubutes = metadata.attributes.unwrap_or_default();
 
+        if
+            attrubutes
+                .iter()
+                .any(
+                    |attribute|
+                        attribute.trait_type == "token" &&
+                        attribute.value.as_str() != config.tier_contract
+                )
+        {
+            return Some(5);
+        }
         for attribute in attrubutes {
             let trait_type = attribute.trait_type.to_lowercase();
             if trait_type != "id" {
@@ -74,7 +85,7 @@ mod query {
             return Some(tier);
         }
 
-        Some(4)
+        Some(5)
     }
 
     pub fn get_tier_from_nft_contract(
@@ -106,7 +117,7 @@ mod query {
             }
 
             let public_metadata = nft_info.info;
-            let tier = find_tier_in_metadata(public_metadata.extension);
+            let tier = find_tier_in_metadata(&config, public_metadata.extension);
             if let Some(tier) = tier {
                 if tier < result_tier {
                     result_tier = tier;
