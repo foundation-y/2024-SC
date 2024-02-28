@@ -68,11 +68,24 @@ pub fn instantiate(
         );
     }
 
+    // Check if the sum of the validators' weights is 100
+    let validators = msg.validators;
+    let total_weight: u128 = validators
+        .iter()
+        .map(|v| v.weight)
+        .sum();
+
+    if total_weight != 100 {
+        return Err(
+            ContractError::Std(StdError::generic_err("The sum of the total weight must be 100!"))
+        );
+    }
+
     let admin = msg.admin.unwrap_or("".to_string());
     let initial_config: Config = Config {
         status: ContractStatus::Active as u8,
         admin: admin,
-        validators: msg.validators,
+        validators,
         usd_deposits: deposits,
         oraiswap_contract: msg.oraiswap_contract,
         stable_denom: msg.stable_denom.unwrap_or_default(),
