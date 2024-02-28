@@ -29,6 +29,7 @@ use crate::msg::{
     ExecuteMsg,
     ExecuteResponse,
     InstantiateMsg,
+    OraiswapContract,
     QueryMsg,
     QueryResponse,
     ResponseStatus,
@@ -93,6 +94,8 @@ pub fn execute(
     let response = match msg {
         ExecuteMsg::ChangeAdmin { admin, .. } => try_change_admin(deps, env, info, admin),
         ExecuteMsg::ChangeStatus { status, .. } => try_change_status(deps, env, info, status),
+        ExecuteMsg::ChangeOraiswap { oraiswap_router_contract, usdt_contract } =>
+            try_change_oraiswap(deps, env, info, oraiswap_router_contract, usdt_contract),
         ExecuteMsg::Deposit { .. } => try_deposit(deps, env, info),
         ExecuteMsg::Withdraw { .. } => try_withdraw(deps, env, info),
         ExecuteMsg::Claim { recipient, start, limit, .. } =>
@@ -175,6 +178,43 @@ pub fn try_change_status(
     }
 
     Ok(Response::new().add_attribute("action", "changed status"))
+}
+
+pub fn try_change_oraiswap(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    oraiswap_router_contract: String,
+    usdt_contract: String
+) -> Result<Response, ContractError> {
+    let mut config: Config = CONFIG_ITEM.load(deps.storage)?;
+    if info.sender.clone() != config.admin {
+        return Err(ContractError::Std(StdError::generic_err("Unauthorized")));
+    }
+
+    // Validate Oraiswap contracts' addresses
+    let validated_oraiswap_router = deps.api.addr_validate(&oraiswap_router_contract).unwrap();
+    assert_eq!(validated_oraiswap_router, oraiswap_router_contract);
+    let validated_usdt = deps.api.addr_validate(&usdt_contract).unwrap();
+    assert_eq!(validated_usdt, usdt_contract);
+
+    // Change Oraiswap contracts
+    if
+        config.oraiswap_contract.orai_swap_router_contract == oraiswap_router_contract &&
+        config.oraiswap_contract.usdt_contract == usdt_contract
+    {
+        return Err(
+            ContractError::Std(StdError::generic_err("Trying to change to the same addresses."))
+        );
+    } else {
+        config.oraiswap_contract = OraiswapContract {
+            orai_swap_router_contract: oraiswap_router_contract,
+            usdt_contract,
+        };
+        config.save(deps.storage)?;
+    }
+
+    Ok(Response::new().add_attribute("action", "changed oraiswap contracts"))
 }
 
 pub fn get_received_funds(_deps: &DepsMut, info: &MessageInfo) -> Result<Coin, ContractError> {

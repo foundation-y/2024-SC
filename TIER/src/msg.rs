@@ -48,6 +48,10 @@ pub enum ExecuteMsg {
     ChangeStatus {
         status: ContractStatus,
     },
+    ChangeOraiswap {
+        oraiswap_router_contract: String,
+        usdt_contract: String,
+    },
     Deposit {},
     Withdraw {},
     Claim {
