@@ -10,7 +10,6 @@ pub const ARCHIVED_PURCHASES: Map<(String, u32), Vec<Purchase>> = Map::new("arch
 pub const ACTIVE_IDOS: Map<(String, u32), bool> = Map::new("active_idos");
 pub const IDO_TO_INFO: Map<(String, u32), UserInfo> = Map::new("ido2info");
 pub const OWNER_TO_IDOS: Map<String, Vec<u32>> = Map::new("owner2idos");
-pub const WHITELIST: Map<(u32, String), bool> = Map::new("whitelist");
 pub const USERINFO: Map<String, UserInfo> = Map::new("usr2info");
 pub const IDO_ITEM: Map<u32, Ido> = Map::new("ido_list");
 
@@ -153,7 +152,6 @@ pub struct Ido {
     pub soft_cap: u128,
     pub total_payment: u128,
     pub withdrawn: bool,
-    pub shared_whitelist: bool,
 }
 
 impl Ido {
@@ -243,7 +241,6 @@ impl Ido {
             total_payment: Uint128::new(self.total_payment),
             soft_cap: Uint128::new(self.soft_cap),
             withdrawn: self.withdrawn,
-            shared_whitelist: self.shared_whitelist,
         })
     }
 }

@@ -40,17 +40,6 @@ pub enum PaymentMethod {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Whitelist {
-    Empty {
-        with: Option<Vec<String>>,
-    },
-    Shared {
-        with_blocked: Option<Vec<String>>,
-    },
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ValidatorWithWeight {
     pub address: String,
@@ -87,16 +76,6 @@ pub enum ExecuteMsg {
         total_amount: Uint128,
         tokens_per_tier: Vec<Uint128>,
         padding: Option<String>,
-        whitelist: Whitelist,
-    },
-    WhitelistAdd {
-        addresses: Vec<String>,
-        ido_id: u32,
-    },
-    WhitelistRemove {
-        addresses: Vec<String>,
-        ido_id: u32,
-        padding: Option<String>,
     },
     BuyTokens {
         ido_id: u32,
@@ -126,12 +105,6 @@ pub enum ExecuteResponse {
         ido_id: u32,
         status: ResponseStatus,
     },
-    WhitelistAdd {
-        status: ResponseStatus,
-    },
-    WhitelistRemove {
-        status: ResponseStatus,
-    },
     BuyTokens {
         amount: Uint128,
         unlock_time: u64,
@@ -155,10 +128,6 @@ pub enum QueryMsg {
     Config {},
     IdoAmount {},
     IdoInfo {
-        ido_id: u32,
-    },
-    InWhitelist {
-        address: String,
         ido_id: u32,
     },
     IdoListOwnedBy {
@@ -219,11 +188,7 @@ pub enum QueryResponse {
         total_payment: Uint128,
         soft_cap: Uint128,
         withdrawn: bool,
-        shared_whitelist: bool,
         remaining_per_tiers: Vec<Uint128>,
-    },
-    InWhitelist {
-        in_whitelist: bool,
     },
     IdoListOwnedBy {
         ido_ids: Vec<u32>,

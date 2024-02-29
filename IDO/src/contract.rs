@@ -27,14 +27,12 @@ use crate::msg::{
     ContractStatus,
     ResponseStatus,
     PaymentMethod,
-    Whitelist,
     QueryMsg,
     QueryResponse,
 };
 use crate::state::{
     Config,
     Ido,
-    WHITELIST,
     OWNER_TO_IDOS,
     Purchase,
     PURCHASES,
@@ -107,7 +105,6 @@ pub fn execute(
             total_amount,
             soft_cap,
             tokens_per_tier,
-            whitelist,
             payment,
             ..
         } => {
@@ -133,14 +130,10 @@ pub fn execute(
                 ido.payment_token_hash = Some(code_hash);
             }
 
-            start_ido(deps, env, info, ido, whitelist)
+            start_ido(deps, env, info, ido)
         }
         ExecuteMsg::BuyTokens { amount, ido_id, .. } =>
             buy_tokens(deps, env, info, ido_id, amount.u128()),
-        ExecuteMsg::WhitelistAdd { addresses, ido_id, .. } =>
-            whitelist_add(deps, env, info, addresses, ido_id),
-        ExecuteMsg::WhitelistRemove { addresses, ido_id, .. } =>
-            whitelist_remove(deps, env, info, addresses, ido_id),
         ExecuteMsg::RecvTokens { ido_id, start, limit, purchase_indices, .. } =>
             recv_tokens(deps, env, info, ido_id, start, limit, purchase_indices),
         ExecuteMsg::Withdraw { ido_id, .. } => withdraw(deps, env, info, ido_id),
@@ -189,8 +182,7 @@ fn start_ido(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    mut ido: Ido,
-    whitelist: Whitelist
+    mut ido: Ido
 ) -> Result<Response, ContractError> {
     assert_contract_active(deps.storage)?;
     assert_admin(&deps, &info.sender.to_string())?;
@@ -232,28 +224,8 @@ fn start_ido(
             ContractError::Std(StdError::generic_err("soft_cap should be less than total amount"))
         );
     }
-    ido.shared_whitelist = match whitelist {
-        Whitelist::Shared { .. } => true,
-        Whitelist::Empty { .. } => false,
-    };
 
     let ido_id = ido.save(deps.storage)?;
-    // let ido_whitelist = state::ido_whitelist(ido_id);
-
-    match whitelist {
-        Whitelist::Empty { with } => {
-            for address in with.unwrap_or_default() {
-                let canonical_address = address.to_string();
-                WHITELIST.save(deps.storage, (ido_id, canonical_address), &true)?;
-            }
-        }
-        Whitelist::Shared { with_blocked } => {
-            for address in with_blocked.unwrap_or_default() {
-                let canonical_address = address.to_string();
-                WHITELIST.save(deps.storage, (ido_id, canonical_address), &false)?;
-            }
-        }
-    }
 
     ido.save(deps.storage)?;
 
@@ -320,11 +292,7 @@ fn buy_tokens(
     }
 
     let config = Config::load(deps.storage)?;
-    let tier = if utils::in_whitelist(deps.storage, &sender, ido_id)? {
-        get_tier(&deps.as_ref(), sender.clone())?
-    } else {
-        config.min_tier
-    };
+    let tier = get_tier(&deps.as_ref(), sender.clone())?;
 
     let remaining_amount = ido.remaining_tokens_per_tier(tier);
     if remaining_amount == 0 {
@@ -694,57 +662,6 @@ fn withdraw(
     return Ok(Response::new().set_data(answer).add_messages(msgs).add_submessages(submsgs));
 }
 
-fn whitelist_add(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    addresses: Vec<String>,
-    ido_id: u32
-) -> Result<Response, ContractError> {
-    assert_contract_active(deps.storage)?;
-    assert_ido_admin(&deps, &info.sender.to_string(), ido_id)?;
-
-    // let whitelist = state::ido_whitelist(ido_id);
-    for address in addresses {
-        let canonical_address = address.to_string();
-        WHITELIST.save(deps.storage, (ido_id, canonical_address), &true)?;
-    }
-
-    let answer = to_json_binary(
-        &(ExecuteResponse::WhitelistAdd {
-            status: ResponseStatus::Success,
-        })
-    )?;
-
-    return Ok(Response::new().set_data(answer));
-}
-
-fn whitelist_remove(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    addresses: Vec<String>,
-    ido_id: u32
-) -> Result<Response, ContractError> {
-    assert_contract_active(deps.storage)?;
-    assert_ido_admin(&deps, &info.sender.to_string(), ido_id)?;
-
-    // let whitelist = state::ido_whitelist(ido_id);
-
-    for address in addresses {
-        let canonical_address = address.to_string();
-        WHITELIST.save(deps.storage, (ido_id, canonical_address), &false)?;
-    }
-
-    let answer = to_json_binary(
-        &(ExecuteResponse::WhitelistRemove {
-            status: ResponseStatus::Success,
-        })
-    )?;
-
-    return Ok(Response::new().set_data(answer));
-}
-
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     let response = match msg {
@@ -759,10 +676,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::IdoInfo { ido_id } => {
             let ido = Ido::load(deps.storage, ido_id)?;
             ido.to_answer()?
-        }
-        QueryMsg::InWhitelist { address, ido_id } => {
-            let in_whitelist = utils::in_whitelist(deps.storage, &address, ido_id)?;
-            QueryResponse::InWhitelist { in_whitelist }
         }
         QueryMsg::IdoListOwnedBy { address, start, limit } => {
             let canonical_address = address.clone();
