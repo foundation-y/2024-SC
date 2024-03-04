@@ -11,6 +11,7 @@ use cosmwasm_std::{
     Deps,
     DepsMut,
     Env,
+    FullDelegation,
     MessageInfo,
     Response,
     StdResult,
@@ -363,6 +364,7 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
 
 pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let config = CONFIG_ITEM.load(deps.storage)?;
+    let contract_address = env.contract.address;
     config.assert_contract_active()?;
 
     let sender = info.sender.to_string();
@@ -373,7 +375,53 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         ..Default::default()
     });
 
-    let amount: u128 = user_info.orai_deposit;
+    let mut amount: u128 = user_info.orai_deposit;
+
+    // Consider the validator slashing
+    let mut total_staked = 0;
+    let mut total_delegated_with_slashing = 0;
+    let user_infos: StdResult<Vec<_>> = USER_INFOS.range(
+        deps.storage,
+        None,
+        None,
+        cosmwasm_std::Order::Ascending
+    ).collect();
+
+    // Calculate the total staked amount from user informations
+    match user_infos {
+        Ok(infos) => {
+            for (_key, value) in infos.iter() {
+                total_staked += value.orai_deposit;
+            }
+            Some(infos);
+        }
+        Err(e) => {
+            return Err(ContractError::Std(e));
+        } // In case of an error, propagate the error
+    }
+
+    // Get total delegated amount from all validators considering with slashing
+    for validator in config.validators.clone() {
+        let current_delegate: Option<FullDelegation> = deps.querier
+            .query_delegation(contract_address.clone(), validator.clone().address)
+            .unwrap();
+
+        if let Some(full_delegation) = current_delegate {
+            let delegated_coin: Coin = full_delegation.amount;
+            let delegated_amount = delegated_coin.amount.u128();
+            total_delegated_with_slashing += delegated_amount;
+        } else {
+            let err_msg = format!("No delegation was found!");
+
+            return Err(ContractError::Std(StdError::generic_err(&err_msg)));
+        }
+    }
+
+    amount = amount
+        .checked_mul(total_delegated_with_slashing)
+        .unwrap()
+        .checked_div(total_staked)
+        .unwrap();
 
     USER_INFOS.remove(deps.storage, info.sender.to_string());
 
@@ -395,7 +443,7 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
 
     let validators = config.validators;
     let confirmed_amount = amount.checked_sub(4).unwrap();
-    let amount = coin(confirmed_amount, ORAI);
+    let coin_amount = coin(confirmed_amount, ORAI);
 
     let mut messages: Vec<SubMsg> = Vec::with_capacity(2);
 
@@ -403,7 +451,10 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         let weight_as_uint128 = Uint128::from(validator.weight);
 
         // Perform the multiplication - Uint128 * Uint128
-        let multiplied = amount.amount.multiply_ratio(weight_as_uint128, Uint128::from(100_u128));
+        let multiplied = coin_amount.amount.multiply_ratio(
+            weight_as_uint128,
+            Uint128::from(100_u128)
+        );
 
         // Now, `multiplied` is Uint128, but we want the result as u128
         let individual_amount: u128 = multiplied.u128();
@@ -437,7 +488,10 @@ pub fn try_claim(
     config.assert_contract_active()?;
 
     let sender = info.sender.to_string();
-    let mut withdrawals = WITHDRAWALS_LIST.may_load(deps.storage, sender)?.unwrap_or_default();
+    let mut withdrawals: Vec<UserWithdrawal> = WITHDRAWALS_LIST.may_load(
+        deps.storage,
+        sender
+    )?.unwrap_or_default();
 
     let length = withdrawals.len();
 
