@@ -247,7 +247,7 @@ pub fn get_received_funds(_deps: &DepsMut, info: &MessageInfo) -> Result<Coin, C
             /* Allow to receive only token denomination defined
             on contract instantiation "config.stable_denom" */
             if
-                received.denom.clone() != "orai" ||
+                received.denom.clone() != "orai" &&
                 config.stable_denom.contains(&received.denom.clone()) == false
             {
                 return Err(ContractError::Std(StdError::generic_err("Unsopported token")));
