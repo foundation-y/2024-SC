@@ -152,6 +152,7 @@ pub struct Ido {
     pub soft_cap: u128,
     pub total_payment: u128,
     pub withdrawn: bool,
+    pub boycott_disabled: bool,
 }
 
 impl Ido {
@@ -241,6 +242,7 @@ impl Ido {
             total_payment: Uint128::new(self.total_payment),
             soft_cap: Uint128::new(self.soft_cap),
             withdrawn: self.withdrawn,
+            boycott_disabled: self.boycott_disabled,
         })
     }
 }

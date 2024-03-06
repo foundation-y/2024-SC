@@ -106,6 +106,7 @@ pub fn execute(
             soft_cap,
             tokens_per_tier,
             payment,
+            boycott_disabled,
             ..
         } => {
             let mut ido = Ido::default();
@@ -129,6 +130,8 @@ pub fn execute(
                 ido.payment_token_contract = Some(payment_token_contract);
                 ido.payment_token_hash = Some(code_hash);
             }
+
+            ido.boycott_disabled = boycott_disabled;
 
             start_ido(deps, env, info, ido)
         }
@@ -676,13 +679,19 @@ pub fn boycott_ido(
 
     let ido = Ido::load(deps.storage, ido_id)?;
 
+    // Check if the startup disabled this function
+    if ido.boycott_disabled {
+        return Err(
+            ContractError::Std(StdError::generic_err("This function is disabled by startup."))
+        );
+    }
     // Check if the user is trying to decline in a day after IDO ended.
     if ido.end_time > current_time.seconds() || current_time.seconds() > ido.end_time + 86400 {
         return Err(
             ContractError::Std(
                 StdError::generic_err(
                     format!(
-                        "A user cannot withdraw before the IDO ends, nor can they do so after one day has passed since the end of the IDO."
+                        "A user cannot withdraw before the IDO ends, nor can they do so after 24 hours has passed since the end of the IDO."
                     )
                 )
             )

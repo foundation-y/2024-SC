@@ -76,6 +76,7 @@ pub enum ExecuteMsg {
         total_amount: Uint128,
         tokens_per_tier: Vec<Uint128>,
         padding: Option<String>,
+        boycott_disabled: bool,
     },
     BuyTokens {
         ido_id: u32,
@@ -196,6 +197,7 @@ pub enum QueryResponse {
         soft_cap: Uint128,
         withdrawn: bool,
         remaining_per_tiers: Vec<Uint128>,
+        boycott_disabled: bool,
     },
     IdoListOwnedBy {
         ido_ids: Vec<u32>,
