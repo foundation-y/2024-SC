@@ -137,6 +137,7 @@ pub fn execute(
         ExecuteMsg::RecvTokens { ido_id, start, limit, purchase_indices, .. } =>
             recv_tokens(deps, env, info, ido_id, start, limit, purchase_indices),
         ExecuteMsg::Withdraw { ido_id, .. } => withdraw(deps, env, info, ido_id),
+        ExecuteMsg::BoycottIdo { ido_id } => boycott_ido(deps, env, info, ido_id),
     };
 
     return response;
@@ -656,6 +657,135 @@ fn withdraw(
             ido_amount: remaining_tokens,
             payment_amount: payment_amount,
             status: ResponseStatus::Success,
+        })
+    )?;
+
+    return Ok(Response::new().set_data(answer).add_messages(msgs).add_submessages(submsgs));
+}
+
+pub fn boycott_ido(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    ido_id: u32
+) -> Result<Response, ContractError> {
+    assert_contract_active(deps.storage)?;
+
+    let canonical_sender = info.sender.to_string();
+    let current_time = env.block.time;
+
+    let ido = Ido::load(deps.storage, ido_id)?;
+
+    // Check if the user is trying to decline in a day after IDO ended.
+    if ido.end_time > current_time.seconds() || current_time.seconds() > ido.end_time + 86400 {
+        return Err(
+            ContractError::Std(
+                StdError::generic_err(
+                    format!(
+                        "A user cannot withdraw before the IDO ends, nor can they do so after one day has passed since the end of the IDO."
+                    )
+                )
+            )
+        );
+    }
+
+    let mut msgs = vec![];
+    let mut submsgs = vec![];
+
+    let mut user_info = USERINFO.may_load(
+        deps.storage,
+        canonical_sender.to_string()
+    )?.unwrap_or_default();
+
+    let mut user_ido_info = IDO_TO_INFO.may_load(deps.storage, (
+        canonical_sender.to_string(),
+        ido_id,
+    ))?.unwrap_or_default();
+
+    // Refund payment from contract to user
+    let refund_payment = user_ido_info.total_payment;
+    if ido.is_native_payment() {
+        msgs.push(
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: canonical_sender,
+                amount: coins(refund_payment, ORAI),
+            })
+        );
+    } else {
+        let token_contract_canonical = ido.payment_token_contract.unwrap();
+        // let token_contract_hash = ido.payment_token_hash.unwrap();
+        let token_contract = token_contract_canonical.to_string();
+
+        let transfer_msg = Cw20ExecuteMsg::TransferFrom {
+            owner: canonical_sender,
+            recipient: env.contract.address.to_string(),
+            amount: Uint128::new(refund_payment),
+        };
+
+        let sub_msg = SubMsg::new(WasmMsg::Execute {
+            contract_addr: token_contract,
+            msg: to_json_binary(&transfer_msg)?,
+            funds: vec![],
+        });
+        submsgs.push(sub_msg);
+    }
+
+    // Withdraw received tokens
+    let withdraw_token_amount = user_ido_info.total_tokens_received.into();
+    if user_ido_info.total_tokens_received != 0 {
+        let ido_token_contract = ido.token_contract.to_string();
+        let transfer_msg = Cw20ExecuteMsg::TransferFrom {
+            owner: info.sender.to_string(),
+            recipient: env.contract.address.to_string(),
+            amount: withdraw_token_amount,
+        };
+
+        let sub_msg = SubMsg::new(WasmMsg::Execute {
+            contract_addr: ido_token_contract,
+            msg: to_json_binary(&transfer_msg)?,
+            funds: vec![],
+        });
+
+        submsgs.push(sub_msg);
+    }
+
+    // Reset the user's info and user's ido info, Ido info
+    let mut ido = Ido::load(deps.storage, ido_id)?;
+    ido.participants = ido.participants.checked_sub(1).unwrap_or_default();
+    ido.sold_amount = ido.sold_amount
+        .checked_sub(user_ido_info.total_tokens_bought)
+        .unwrap_or_default();
+    ido.total_payment = ido.total_payment.checked_sub(refund_payment).unwrap_or_default();
+    let tier = get_tier(&deps.as_ref(), info.sender.to_string())?;
+    let tier_index = tier.checked_sub(1).unwrap() as usize;
+    ido.remaining_tokens_per_tier[tier_index] = ido.remaining_tokens_per_tier[tier_index]
+        .checked_add(user_ido_info.total_tokens_bought)
+        .unwrap();
+
+    user_info.total_payment = user_info.total_payment
+        .checked_sub(user_ido_info.total_payment)
+        .unwrap_or_default();
+    user_info.total_tokens_bought = user_info.total_tokens_bought
+        .checked_sub(user_ido_info.total_tokens_bought)
+        .unwrap_or_default();
+    user_info.total_tokens_received = user_info.total_tokens_received
+        .checked_sub(user_ido_info.total_tokens_received)
+        .unwrap_or_default();
+
+    user_ido_info.total_tokens_received = 0;
+    user_ido_info.total_tokens_bought = 0;
+    user_ido_info.total_payment = 0;
+
+    ido.save(deps.storage)?;
+
+    USERINFO.save(deps.storage, info.sender.to_string(), &user_info)?;
+
+    IDO_TO_INFO.save(deps.storage, (info.sender.to_string(), ido_id), &user_ido_info)?;
+
+    let answer = to_json_binary(
+        &(ExecuteResponse::BoycottIdo {
+            token_amount: withdraw_token_amount,
+            payment_amount: refund_payment.into(),
         })
     )?;
 

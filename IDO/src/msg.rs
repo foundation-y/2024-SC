@@ -90,6 +90,9 @@ pub enum ExecuteMsg {
     Withdraw {
         ido_id: u32,
     },
+    BoycottIdo {
+        ido_id: u32,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -119,6 +122,10 @@ pub enum ExecuteResponse {
         ido_amount: Uint128,
         payment_amount: Uint128,
         status: ResponseStatus,
+    },
+    BoycottIdo {
+        token_amount: Uint128,
+        payment_amount: Uint128,
     },
 }
 
