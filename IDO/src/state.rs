@@ -9,7 +9,6 @@ pub const PURCHASES: Map<(String, u32), Vec<Purchase>> = Map::new("purchase"); /
 pub const ARCHIVED_PURCHASES: Map<(String, u32), Vec<Purchase>> = Map::new("archive");
 pub const ACTIVE_IDOS: Map<(String, u32), bool> = Map::new("active_idos");
 pub const IDO_TO_INFO: Map<(String, u32), UserInfo> = Map::new("ido2info");
-pub const OWNER_TO_IDOS: Map<String, Vec<u32>> = Map::new("owner2idos");
 pub const USERINFO: Map<String, UserInfo> = Map::new("usr2info");
 pub const IDO_ITEM: Map<u32, Ido> = Map::new("ido_list");
 

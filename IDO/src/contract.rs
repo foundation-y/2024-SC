@@ -33,7 +33,6 @@ use crate::msg::{
 use crate::state::{
     Config,
     Ido,
-    OWNER_TO_IDOS,
     Purchase,
     PURCHASES,
     IDO_TO_INFO,
@@ -232,15 +231,6 @@ fn start_ido(
     let ido_id = ido.save(deps.storage)?;
 
     ido.save(deps.storage)?;
-
-    let canonical_sender = info.sender.to_string();
-
-    let mut startup_ido_list = OWNER_TO_IDOS.may_load(
-        deps.storage,
-        canonical_sender
-    )?.unwrap_or_default();
-    startup_ido_list.push(ido_id);
-    OWNER_TO_IDOS.save(deps.storage, info.sender.to_string(), &startup_ido_list)?;
 
     let token_address = ido.token_contract.to_string();
     let transfer_msg = Cw20ExecuteMsg::TransferFrom {
@@ -815,24 +805,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::IdoInfo { ido_id } => {
             let ido = Ido::load(deps.storage, ido_id)?;
             ido.to_answer()?
-        }
-        QueryMsg::IdoListOwnedBy { address, start, limit } => {
-            let canonical_address = address.clone();
-
-            let ido_list = OWNER_TO_IDOS.may_load(
-                deps.storage,
-                canonical_address.clone()
-            )?.unwrap_or_default();
-            let amount = ido_list.len() as u32;
-            let mut ido_ids = Vec::new();
-
-            for i in start..start + limit {
-                if i < amount {
-                    ido_ids.push(ido_list[i as usize]);
-                }
-            }
-
-            QueryResponse::IdoListOwnedBy { ido_ids, amount }
         }
         QueryMsg::Purchases { ido_id, address, start, limit } => {
             let canonical_address = address.clone();

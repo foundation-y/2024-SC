@@ -138,11 +138,6 @@ pub enum QueryMsg {
     IdoInfo {
         ido_id: u32,
     },
-    IdoListOwnedBy {
-        address: String,
-        start: u32,
-        limit: u32,
-    },
     Purchases {
         ido_id: u32,
         address: String,
