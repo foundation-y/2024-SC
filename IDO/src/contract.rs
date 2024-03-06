@@ -36,7 +36,6 @@ use crate::state::{
     Purchase,
     PURCHASES,
     IDO_TO_INFO,
-    USERINFO,
     ACTIVE_IDOS,
     ARCHIVED_PURCHASES,
     CONFIG_KEY,
@@ -336,16 +335,6 @@ fn buy_tokens(
         .checked_add(amount)
         .unwrap();
 
-    let mut user_info = USERINFO.may_load(
-        deps.storage,
-        canonical_sender.to_string()
-    )?.unwrap_or_default();
-
-    user_info.total_payment = user_info.total_payment.checked_add(payment).unwrap();
-    user_info.total_tokens_bought = user_info.total_tokens_bought.checked_add(amount).unwrap();
-
-    USERINFO.save(deps.storage, canonical_sender.to_string(), &user_info)?;
-
     IDO_TO_INFO.save(deps.storage, (canonical_sender.to_string(), ido_id), &user_ido_info)?;
 
     ACTIVE_IDOS.save(deps.storage, (canonical_sender.to_string(), ido_id), &true)?;
@@ -405,10 +394,6 @@ fn recv_tokens(
     let current_time = env.block.time;
 
     let ido = Ido::load(deps.storage, ido_id)?;
-    let mut user_info = USERINFO.may_load(
-        deps.storage,
-        canonical_sender.to_string()
-    )?.unwrap_or_default();
     let mut user_ido_info = IDO_TO_INFO.may_load(deps.storage, (
         canonical_sender.to_string(),
         ido_id,
@@ -416,26 +401,17 @@ fn recv_tokens(
 
     // when ido failed, withdraw the payment tokens.
     if current_time.seconds() > ido.end_time && ido.soft_cap > ido.sold_amount {
-        user_info.total_payment = user_info.total_payment
-            .checked_sub(user_ido_info.total_payment)
-            .unwrap_or_default();
-        // Subtract from user_info's total tokens bought
-        user_info.total_tokens_bought = user_info.total_tokens_bought
-            .checked_sub(user_ido_info.total_tokens_bought)
-            .unwrap_or_default();
         let refund_amount = user_ido_info.total_payment;
         user_ido_info.total_tokens_received = 0;
         user_ido_info.total_tokens_bought = 0;
         user_ido_info.total_payment = 0;
-
-        USERINFO.save(deps.storage, canonical_sender.to_string(), &user_info)?;
 
         IDO_TO_INFO.save(deps.storage, (canonical_sender.to_string(), ido_id), &user_ido_info)?;
         ACTIVE_IDOS.remove(deps.storage, (canonical_sender.to_string(), ido_id));
 
         let answer = to_json_binary(
             &(ExecuteResponse::RecvTokens {
-                amount: Uint128::new(user_info.total_payment),
+                amount: Uint128::new(user_ido_info.total_payment),
                 status: ResponseStatus::Success,
                 ido_success: false,
             })
@@ -534,16 +510,6 @@ fn recv_tokens(
             ido_success: true,
         })
     )?;
-
-    user_info.total_tokens_received = user_info.total_tokens_received
-        .checked_add(recv_amount)
-        .unwrap();
-
-    user_ido_info.total_tokens_received = user_ido_info.total_tokens_received
-        .checked_add(recv_amount)
-        .unwrap();
-
-    USERINFO.save(deps.storage, canonical_sender.to_string(), &user_info)?;
 
     IDO_TO_INFO.save(deps.storage, (canonical_sender.to_string(), ido_id), &user_ido_info)?;
 
@@ -691,11 +657,6 @@ pub fn boycott_ido(
     let mut msgs = vec![];
     let mut submsgs = vec![];
 
-    let mut user_info = USERINFO.may_load(
-        deps.storage,
-        canonical_sender.to_string()
-    )?.unwrap_or_default();
-
     let mut user_ido_info = IDO_TO_INFO.may_load(deps.storage, (
         canonical_sender.to_string(),
         ido_id,
@@ -748,7 +709,7 @@ pub fn boycott_ido(
         submsgs.push(sub_msg);
     }
 
-    // Reset the user's info and user's ido info, Ido info
+    // Reset the user's ido info and Ido info
     let mut ido = Ido::load(deps.storage, ido_id)?;
     ido.participants = ido.participants.checked_sub(1).unwrap_or_default();
     ido.sold_amount = ido.sold_amount
@@ -761,23 +722,11 @@ pub fn boycott_ido(
         .checked_add(user_ido_info.total_tokens_bought)
         .unwrap();
 
-    user_info.total_payment = user_info.total_payment
-        .checked_sub(user_ido_info.total_payment)
-        .unwrap_or_default();
-    user_info.total_tokens_bought = user_info.total_tokens_bought
-        .checked_sub(user_ido_info.total_tokens_bought)
-        .unwrap_or_default();
-    user_info.total_tokens_received = user_info.total_tokens_received
-        .checked_sub(user_ido_info.total_tokens_received)
-        .unwrap_or_default();
-
     user_ido_info.total_tokens_received = 0;
     user_ido_info.total_tokens_bought = 0;
     user_ido_info.total_payment = 0;
 
     ido.save(deps.storage)?;
-
-    USERINFO.save(deps.storage, info.sender.to_string(), &user_info)?;
 
     IDO_TO_INFO.save(deps.storage, (info.sender.to_string(), ido_id), &user_ido_info)?;
 
@@ -867,14 +816,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::UserInfo { address, ido_id } => {
             let canonical_address = address.clone();
 
-            let user_info = if let Some(ido_id) = ido_id {
-                IDO_TO_INFO.may_load(deps.storage, (
-                    canonical_address.to_string(),
-                    ido_id,
-                ))?.unwrap_or_default()
-            } else {
-                USERINFO.may_load(deps.storage, canonical_address.to_string())?.unwrap_or_default()
-            };
+            let user_info = IDO_TO_INFO.may_load(deps.storage, (
+                canonical_address.to_string(),
+                ido_id,
+            ))?.unwrap_or_default();
 
             user_info.to_answer()
         }

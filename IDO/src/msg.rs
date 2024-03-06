@@ -152,7 +152,7 @@ pub enum QueryMsg {
     },
     UserInfo {
         address: String,
-        ido_id: Option<u32>,
+        ido_id: u32,
     },
     TierInfo {
         address: String,
