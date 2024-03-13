@@ -1,20 +1,22 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
+    coins,
     to_json_binary,
+    BankMsg,
+    Binary,
+    CosmosMsg,
+    Deps,
     DepsMut,
     Env,
     MessageInfo,
+    Reply,
     Response,
-    BankMsg,
-    coins,
-    CosmosMsg,
-    Uint128,
-    SubMsg,
-    WasmMsg,
     StdResult,
-    Binary,
-    Deps,
+    SubMsg,
+    SubMsgResult,
+    Uint128,
+    WasmMsg,
 };
 
 use cw20::Cw20ExecuteMsg;
@@ -46,6 +48,7 @@ use cosmwasm_std::StdError;
 
 pub const BLOCK_SIZE: usize = 256;
 pub const ORAI: &str = "orai";
+pub const WITHDRAW_TOKEN_REPLY_ID: u64 = 1;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -511,6 +514,8 @@ fn recv_tokens(
         })
     )?;
 
+    user_ido_info.total_tokens_received += recv_amount;
+
     IDO_TO_INFO.save(deps.storage, (canonical_sender.to_string(), ido_id), &user_ido_info)?;
 
     if user_ido_info.total_tokens_bought == user_ido_info.total_tokens_received {
@@ -662,6 +667,27 @@ pub fn boycott_ido(
         ido_id,
     ))?.unwrap_or_default();
 
+    // Withdraw received tokens
+    let withdraw_token_amount: Uint128 = user_ido_info.total_tokens_received.into();
+    if user_ido_info.total_tokens_received != 0 {
+        let ido_token_contract = ido.token_contract.to_string();
+        let transfer_msg = Cw20ExecuteMsg::TransferFrom {
+            owner: info.sender.to_string(),
+            recipient: env.contract.address.to_string(),
+            amount: withdraw_token_amount,
+        };
+
+        let msg = WasmMsg::Execute {
+            contract_addr: ido_token_contract,
+            msg: to_json_binary(&transfer_msg)?,
+            funds: vec![],
+        };
+
+        let sub_msg = SubMsg::reply_always(msg, 1);
+
+        submsgs.push(sub_msg);
+    }
+
     // Refund payment from contract to user
     let refund_payment = user_ido_info.total_payment;
     if ido.is_native_payment() {
@@ -676,9 +702,8 @@ pub fn boycott_ido(
         // let token_contract_hash = ido.payment_token_hash.unwrap();
         let token_contract = token_contract_canonical.to_string();
 
-        let transfer_msg = Cw20ExecuteMsg::TransferFrom {
-            owner: canonical_sender,
-            recipient: env.contract.address.to_string(),
+        let transfer_msg = Cw20ExecuteMsg::Transfer {
+            recipient: canonical_sender,
             amount: Uint128::new(refund_payment),
         };
 
@@ -687,25 +712,6 @@ pub fn boycott_ido(
             msg: to_json_binary(&transfer_msg)?,
             funds: vec![],
         });
-        submsgs.push(sub_msg);
-    }
-
-    // Withdraw received tokens
-    let withdraw_token_amount = user_ido_info.total_tokens_received.into();
-    if user_ido_info.total_tokens_received != 0 {
-        let ido_token_contract = ido.token_contract.to_string();
-        let transfer_msg = Cw20ExecuteMsg::TransferFrom {
-            owner: info.sender.to_string(),
-            recipient: env.contract.address.to_string(),
-            amount: withdraw_token_amount,
-        };
-
-        let sub_msg = SubMsg::new(WasmMsg::Execute {
-            contract_addr: ido_token_contract,
-            msg: to_json_binary(&transfer_msg)?,
-            funds: vec![],
-        });
-
         submsgs.push(sub_msg);
     }
 
@@ -738,6 +744,32 @@ pub fn boycott_ido(
     )?;
 
     return Ok(Response::new().set_data(answer).add_messages(msgs).add_submessages(submsgs));
+}
+
+#[entry_point]
+pub fn reply(_deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+    if msg.id == WITHDRAW_TOKEN_REPLY_ID {
+        match msg.result {
+            SubMsgResult::Ok(_) => {
+                // Perform actions upon successful token withdrawal
+                Ok(Response::new().add_attribute("boycott_withdraw_token", "success"))
+            }
+            SubMsgResult::Err(_err) => {
+                // Perform actions upon failed token withdrawal
+                return Err(
+                    ContractError::Std(
+                        StdError::generic_err(
+                            &format!(
+                                "The contract does not have Allowance from the user to move its tokens"
+                            )
+                        )
+                    )
+                );
+            }
+        }
+    } else {
+        Ok(Response::new())
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
