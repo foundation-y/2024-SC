@@ -10,11 +10,9 @@ use cosmwasm_std::{
     DepsMut,
     Env,
     MessageInfo,
-    Reply,
     Response,
     StdResult,
     SubMsg,
-    SubMsgResult,
     Uint128,
     WasmMsg,
 };
@@ -48,7 +46,6 @@ use cosmwasm_std::StdError;
 
 pub const BLOCK_SIZE: usize = 256;
 pub const ORAI: &str = "orai";
-pub const WITHDRAW_TOKEN_REPLY_ID: u64 = 1;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -660,7 +657,6 @@ pub fn boycott_ido(
     }
 
     let mut msgs = vec![];
-    let mut submsgs = vec![];
 
     let mut user_ido_info = IDO_TO_INFO.may_load(deps.storage, (
         canonical_sender.to_string(),
@@ -677,15 +673,13 @@ pub fn boycott_ido(
             amount: withdraw_token_amount,
         };
 
-        let msg = WasmMsg::Execute {
+        let withdraw_token_msg = WasmMsg::Execute {
             contract_addr: ido_token_contract,
             msg: to_json_binary(&transfer_msg)?,
             funds: vec![],
         };
 
-        let sub_msg = SubMsg::reply_always(msg, 1);
-
-        submsgs.push(sub_msg);
+        msgs.push(CosmosMsg::Wasm(withdraw_token_msg));
     }
 
     // Refund payment from contract to user
@@ -707,12 +701,13 @@ pub fn boycott_ido(
             amount: Uint128::new(refund_payment),
         };
 
-        let sub_msg = SubMsg::new(WasmMsg::Execute {
+        let refund_msg = WasmMsg::Execute {
             contract_addr: token_contract,
             msg: to_json_binary(&transfer_msg)?,
             funds: vec![],
-        });
-        submsgs.push(sub_msg);
+        };
+
+        msgs.push(CosmosMsg::Wasm(refund_msg));
     }
 
     // Reset the user's ido info and Ido info
@@ -743,33 +738,7 @@ pub fn boycott_ido(
         })
     )?;
 
-    return Ok(Response::new().set_data(answer).add_messages(msgs).add_submessages(submsgs));
-}
-
-#[entry_point]
-pub fn reply(_deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
-    if msg.id == WITHDRAW_TOKEN_REPLY_ID {
-        match msg.result {
-            SubMsgResult::Ok(_) => {
-                // Perform actions upon successful token withdrawal
-                Ok(Response::new().add_attribute("boycott_withdraw_token", "success"))
-            }
-            SubMsgResult::Err(_err) => {
-                // Perform actions upon failed token withdrawal
-                return Err(
-                    ContractError::Std(
-                        StdError::generic_err(
-                            &format!(
-                                "The contract does not have Allowance from the user to move its tokens"
-                            )
-                        )
-                    )
-                );
-            }
-        }
-    } else {
-        Ok(Response::new())
-    }
+    return Ok(Response::new().set_data(answer).add_messages(msgs));
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
