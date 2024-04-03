@@ -34,13 +34,25 @@ use crate::msg::{
     QueryMsg,
     QueryResponse,
     ResponseStatus,
+    SerializedUnbonds,
     SerializedWithdrawals,
 };
-use crate::state::{ self, Config, UserWithdrawal, CONFIG_ITEM, USER_INFOS, WITHDRAWALS_LIST };
+use crate::state::{
+    self,
+    Config,
+    UserUnbond,
+    UserWithdrawal,
+    CONFIG_ITEM,
+    UNBOND_LIST,
+    USER_INFOS,
+    WITHDRAWALS_LIST,
+};
 use crate::utils;
 use cosmwasm_std::StdError;
 
 pub const UNBOUND_TIME: u64 = 21 * 24 * 60 * 60;
+pub const BATCH_PERIOD: u64 = 5 * 24 * 60 * 60;
+pub const MAX_UNIX_TIMESTAMP: u64 = 2147483647;
 pub const ORAI: &str = "orai";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -112,6 +124,7 @@ pub fn execute(
             try_change_oraiswap(deps, env, info, oraiswap_router_contract, usdt_contract),
         ExecuteMsg::Deposit { .. } => try_deposit(deps, env, info),
         ExecuteMsg::Withdraw { .. } => try_withdraw(deps, env, info),
+        ExecuteMsg::BatchUnbond { .. } => try_batch_unbond(deps, env),
         ExecuteMsg::Claim { recipient, start, limit, .. } =>
             try_claim(deps, env, info, recipient, start, limit),
         ExecuteMsg::WithdrawRewards { recipient, .. } => {
@@ -138,6 +151,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::UserInfo { address } => to_json_binary(&query_user_info(deps, address)?),
         QueryMsg::Withdrawals { address, start, limit } =>
             to_json_binary(&query_withdrawals(deps, address, start, limit)?),
+        QueryMsg::Unbonds {} => to_json_binary(&query_unbonds(deps)?),
     }
 }
 
@@ -363,8 +377,9 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
 }
 
 pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let _env = env.clone();
     let config = CONFIG_ITEM.load(deps.storage)?;
-    let contract_address = env.contract.address;
+    let contract_address = _env.contract.address;
     config.assert_contract_active()?;
 
     let sender = info.sender.to_string();
@@ -426,7 +441,7 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     USER_INFOS.remove(deps.storage, info.sender.to_string());
 
     let current_time = env.block.time.seconds();
-    let claim_time = current_time.checked_add(UNBOUND_TIME).unwrap();
+    let claim_time = MAX_UNIX_TIMESTAMP;
     let withdrawal = UserWithdrawal {
         amount,
         timestamp: current_time,
@@ -441,9 +456,135 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     withdrawals.push(withdrawal);
     WITHDRAWALS_LIST.save(deps.storage, info.sender.to_string(), &withdrawals)?;
 
+    let unbond_element = UserUnbond {
+        address: info.sender.into(),
+        amount,
+        timestamp: current_time,
+    };
+
+    let _ = UNBOND_LIST.push_back(deps.storage, &unbond_element);
+
+    // Batch Unbond whenever withdrawal happen
+
+    if UNBOND_LIST.len(deps.storage)? == 0 {
+        let err_msg = format!("Unbond List is Empty!");
+        return Err(ContractError::Std(StdError::generic_err(&err_msg)));
+    }
+
+    let mut first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
+
+    if current_time - first_unbond.timestamp >= BATCH_PERIOD {
+        // Get the total undelegated amount, Pop valid unbond action from Deque, Update the claim times
+        let mut total_batch_undelegate_amount = 0;
+
+        while UNBOND_LIST.len(deps.storage).unwrap() > 0 {
+            first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
+            total_batch_undelegate_amount += first_unbond.amount;
+            let key_address = first_unbond.address.to_string();
+            let mut withdrawals = WITHDRAWALS_LIST.may_load(
+                deps.storage,
+                key_address.clone()
+            )?.unwrap_or_default();
+            for i in 0..withdrawals.len() {
+                if
+                    withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
+                    withdrawals[i].amount == first_unbond.amount &&
+                    withdrawals[i].timestamp == first_unbond.timestamp
+                {
+                    withdrawals[i].claim_time = current_time.checked_add(UNBOUND_TIME).unwrap();
+                }
+            }
+            WITHDRAWALS_LIST.save(deps.storage, key_address.clone(), &withdrawals)?;
+
+            // Pop
+            UNBOND_LIST.pop_front(deps.storage)?;
+        }
+
+        let validators = config.validators;
+        let confirmed_amount = total_batch_undelegate_amount.checked_sub(4).unwrap();
+
+        let mut messages: Vec<SubMsg> = Vec::with_capacity(2);
+
+        for validator in validators {
+            let weight_as_uint128 = Uint128::from(validator.weight);
+
+            // Perform the multiplication - Uint128 * Uint128
+            let multiplied = Uint128::from(confirmed_amount).multiply_ratio(
+                weight_as_uint128,
+                Uint128::from(100_u128)
+            );
+
+            // Now, `multiplied` is Uint128, but we want the result as u128
+            let individual_amount: u128 = multiplied.u128();
+
+            let undelegate_msg = StakingMsg::Undelegate {
+                validator: validator.address,
+                amount: coin(individual_amount, ORAI),
+            };
+            let msg = CosmosMsg::Staking(undelegate_msg);
+            messages.push(SubMsg::new(msg));
+        }
+
+        let answer = to_json_binary(
+            &(ExecuteResponse::Withdraw {
+                status: ResponseStatus::Success,
+            })
+        )?;
+        Ok(
+            Response::new()
+                .add_submessages(messages)
+                .set_data(answer)
+                .add_attribute("action", "Add to withdraw list and batch unbond done!")
+        )
+    } else {
+        Ok(Response::new().add_attribute("action", "Add to withdraw list!"))
+    }
+}
+
+pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+    if UNBOND_LIST.len(deps.storage)? == 0 {
+        let err_msg = format!("Unbond List is Empty!");
+        return Err(ContractError::Std(StdError::generic_err(&err_msg)));
+    }
+
+    let config = CONFIG_ITEM.load(deps.storage)?;
+    let current_time = env.block.time.seconds();
+
+    let mut first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
+
+    if current_time - first_unbond.timestamp < BATCH_PERIOD {
+        let err_msg = format!("The time difference is lower than 5 days!");
+        return Err(ContractError::Std(StdError::generic_err(&err_msg)));
+    }
+
+    // Get the total undelegated amount, Pop valid unbond action from Deque, Update the claim times
+    let mut total_batch_undelegate_amount = 0;
+
+    while UNBOND_LIST.len(deps.storage).unwrap() > 0 {
+        first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
+        total_batch_undelegate_amount += first_unbond.amount;
+        let key_address = first_unbond.address.to_string();
+        let mut withdrawals = WITHDRAWALS_LIST.may_load(
+            deps.storage,
+            key_address.clone()
+        )?.unwrap_or_default();
+        for i in 0..withdrawals.len() {
+            if
+                withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
+                withdrawals[i].amount == first_unbond.amount &&
+                withdrawals[i].timestamp == first_unbond.timestamp
+            {
+                withdrawals[i].claim_time = current_time.checked_add(UNBOUND_TIME).unwrap();
+            }
+        }
+        WITHDRAWALS_LIST.save(deps.storage, key_address.clone(), &withdrawals)?;
+
+        // Pop
+        UNBOND_LIST.pop_front(deps.storage)?;
+    }
+
     let validators = config.validators;
-    let confirmed_amount = amount.checked_sub(4).unwrap();
-    let coin_amount = coin(confirmed_amount, ORAI);
+    let confirmed_amount = total_batch_undelegate_amount.checked_sub(4).unwrap();
 
     let mut messages: Vec<SubMsg> = Vec::with_capacity(2);
 
@@ -451,7 +592,7 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         let weight_as_uint128 = Uint128::from(validator.weight);
 
         // Perform the multiplication - Uint128 * Uint128
-        let multiplied = coin_amount.amount.multiply_ratio(
+        let multiplied = Uint128::from(confirmed_amount).multiply_ratio(
             weight_as_uint128,
             Uint128::from(100_u128)
         );
@@ -459,11 +600,11 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         // Now, `multiplied` is Uint128, but we want the result as u128
         let individual_amount: u128 = multiplied.u128();
 
-        let withdraw_msg = StakingMsg::Undelegate {
+        let undelegate_msg = StakingMsg::Undelegate {
             validator: validator.address,
             amount: coin(individual_amount, ORAI),
         };
-        let msg = CosmosMsg::Staking(withdraw_msg);
+        let msg = CosmosMsg::Staking(undelegate_msg);
         messages.push(SubMsg::new(msg));
     }
 
@@ -749,5 +890,25 @@ pub fn query_withdrawals(
         withdrawals: serialized_withdrawals,
     };
 
+    Ok(answer)
+}
+
+pub fn query_unbonds(deps: Deps) -> StdResult<QueryResponse> {
+    let unbond_list = UNBOND_LIST;
+    let amount = unbond_list.len(deps.storage)?;
+
+    let mut serialized_unbonds: Vec<SerializedUnbonds> = Vec::new();
+
+    let unbond_list_iter = unbond_list.iter(deps.storage)?;
+
+    for it in unbond_list_iter {
+        let user_unbond = it.unwrap();
+        serialized_unbonds.push(user_unbond.to_serialized());
+    }
+
+    let answer = QueryResponse::Unbonds {
+        amount: amount.try_into().unwrap(),
+        unbonds: serialized_unbonds,
+    };
     Ok(answer)
 }

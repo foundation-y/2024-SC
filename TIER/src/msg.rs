@@ -54,6 +54,7 @@ pub enum ExecuteMsg {
     },
     Deposit {},
     Withdraw {},
+    BatchUnbond {},
     Claim {
         recipient: Option<String>,
         start: Option<u32>,
@@ -113,6 +114,7 @@ pub enum QueryMsg {
         start: Option<u32>,
         limit: Option<u32>,
     },
+    Unbonds {},
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -120,6 +122,14 @@ pub enum QueryMsg {
 pub struct SerializedWithdrawals {
     pub amount: Uint128,
     pub claim_time: u64,
+    pub timestamp: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SerializedUnbonds {
+    pub address: String,
+    pub amount: Uint128,
     pub timestamp: u64,
 }
 
@@ -144,6 +154,10 @@ pub enum QueryResponse {
     Withdrawals {
         amount: u32,
         withdrawals: Vec<SerializedWithdrawals>,
+    },
+    Unbonds {
+        amount: u32,
+        unbonds: Vec<SerializedUnbonds>,
     },
 }
 

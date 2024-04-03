@@ -2,15 +2,17 @@ use crate::msg::{
     ContractStatus,
     OraiswapContract,
     QueryResponse,
+    SerializedUnbonds,
     SerializedWithdrawals,
     ValidatorWithWeight,
 };
 use cosmwasm_std::{ StdError, StdResult, Storage, Uint128 };
-use cw_storage_plus::{ Item, Map };
+use cw_storage_plus::{ Deque, Item, Map };
 use serde::{ Deserialize, Serialize };
 
 pub const CONFIG_ITEM: Item<Config> = Item::new("config");
 pub const WITHDRAWALS_LIST: Map<String, Vec<UserWithdrawal>> = Map::new("withdraw"); //Deque<UserWithdrawal> = Deque::new("withdraw");
+pub const UNBOND_LIST: Deque<UserUnbond> = Deque::new("unbond_list");
 pub const USER_INFOS: Map<String, UserInfo> = Map::new("user_info");
 
 // pub fn withdrawals_list(address: &CanonicalAddr) -> Deque<'static, UserWithdrawal> {
@@ -117,6 +119,23 @@ impl UserWithdrawal {
         SerializedWithdrawals {
             amount: Uint128::from(self.amount),
             claim_time: self.claim_time,
+            timestamp: self.timestamp,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserUnbond {
+    pub address: String,
+    pub amount: u128,
+    pub timestamp: u64,
+}
+
+impl UserUnbond {
+    pub fn to_serialized(&self) -> SerializedUnbonds {
+        SerializedUnbonds {
+            amount: Uint128::from(self.amount),
+            address: self.address.clone(),
             timestamp: self.timestamp,
         }
     }
