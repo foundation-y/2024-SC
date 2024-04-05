@@ -14,6 +14,7 @@ pub const CONFIG_ITEM: Item<Config> = Item::new("config");
 pub const WITHDRAWALS_LIST: Map<String, Vec<UserWithdrawal>> = Map::new("withdraw"); //Deque<UserWithdrawal> = Deque::new("withdraw");
 pub const UNBOND_LIST: Deque<UserUnbond> = Deque::new("unbond_list");
 pub const USER_INFOS: Map<String, UserInfo> = Map::new("user_info");
+pub const USER_TOTAL_DELEGATED: Map<String, Uint128> = Map::new("user_total_delegate");
 
 // pub fn withdrawals_list(address: &CanonicalAddr) -> Deque<'static, UserWithdrawal> {
 //     WITHDRAWALS_LIST.push_back(address.as_slice())
@@ -94,6 +95,7 @@ pub struct UserInfo {
     pub timestamp: u64,
     pub usd_deposit: u128,
     pub orai_deposit: u128,
+    pub total_orai_deposit: u128,
 }
 
 impl UserInfo {

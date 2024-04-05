@@ -109,6 +109,9 @@ pub enum QueryMsg {
     UserInfo {
         address: String,
     },
+    UserTotalDelegated {
+        address: String,
+    },
     Withdrawals {
         address: String,
         start: Option<u32>,
@@ -150,6 +153,9 @@ pub enum QueryResponse {
         timestamp: u64,
         usd_deposit: Uint128,
         orai_deposit: Uint128,
+    },
+    UserTotalDelegated {
+        total_delegated: Uint128,
     },
     Withdrawals {
         amount: u32,

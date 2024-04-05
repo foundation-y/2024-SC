@@ -26,6 +26,7 @@ use crate::band::OraiPriceOracle;
 // use crate::utils;
 use crate::error::ContractError;
 use crate::msg::{
+    self,
     ContractStatus,
     ExecuteMsg,
     ExecuteResponse,
@@ -45,6 +46,7 @@ use crate::state::{
     CONFIG_ITEM,
     UNBOND_LIST,
     USER_INFOS,
+    USER_TOTAL_DELEGATED,
     WITHDRAWALS_LIST,
 };
 use crate::utils;
@@ -149,6 +151,8 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::UserInfo { address } => to_json_binary(&query_user_info(deps, address)?),
+        QueryMsg::UserTotalDelegated { address } =>
+            to_json_binary(&query_user_total_delegated(deps, address)?),
         QueryMsg::Withdrawals { address, start, limit } =>
             to_json_binary(&query_withdrawals(deps, address, start, limit)?),
         QueryMsg::Unbonds {} => to_json_binary(&query_unbonds(deps)?),
@@ -298,6 +302,7 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
     });
     let current_tier = user_info.tier;
     let old_usd_deposit = user_info.usd_deposit;
+    let old_orai_deposit = user_info.orai_deposit;
     let new_usd_deposit = old_usd_deposit.checked_add(usd_deposit).unwrap();
 
     let new_tier = config.tier_by_deposit(new_usd_deposit);
@@ -346,7 +351,24 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
     user_info.timestamp = env.block.time.seconds();
     user_info.usd_deposit = new_tier_deposit;
     // user_info.orai_deposit = user_info.orai_deposit.checked_add(orai_deposit).unwrap();
-    user_info.orai_deposit = orai_price_ocracle.orai_amount(user_info.usd_deposit);
+    let orai_deposit = orai_price_ocracle.orai_amount(user_info.usd_deposit);
+    user_info.orai_deposit = orai_deposit;
+
+    // Calculate user's total delegated amount
+    let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
+        deps.storage,
+        info.sender.to_string()
+    )?.unwrap_or_default();
+
+    user_total_delegated = user_total_delegated
+        .checked_add(Uint128::from(orai_deposit))
+        .unwrap()
+        .checked_sub(Uint128::from(old_orai_deposit))
+        .unwrap();
+
+    USER_TOTAL_DELEGATED.save(deps.storage, info.sender.to_string(), &user_total_delegated)?;
+    //////////////////////////////////////////
+
     USER_INFOS.save(deps.storage, info.sender.to_string(), &user_info)?;
 
     let validators = config.validators;
@@ -393,27 +415,23 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     let mut amount: u128 = user_info.orai_deposit;
 
     // Consider the validator slashing
-    let mut total_staked = 0;
     let mut total_delegated_with_slashing = 0;
-    let user_infos: StdResult<Vec<_>> = USER_INFOS.range(
+    let mut total_staked = 0;
+
+    // Get the total staked amount
+    let delegated_iterator: Vec<_> = USER_TOTAL_DELEGATED.range(
         deps.storage,
         None,
         None,
         cosmwasm_std::Order::Ascending
-    ).collect();
+    ).collect::<_>();
 
-    // Calculate the total staked amount from user informations
-    match user_infos {
-        Ok(infos) => {
-            for (_key, value) in infos.iter() {
-                total_staked += value.orai_deposit;
-            }
-            Some(infos);
-        }
-        Err(e) => {
-            return Err(ContractError::Std(e));
-        } // In case of an error, propagate the error
+    for delegate in delegated_iterator {
+        let temp = delegate.unwrap();
+        total_staked += temp.1.u128();
     }
+
+    //////////////////////////////////////////
 
     // Get total delegated amount from all validators considering with slashing
     for validator in config.validators.clone() {
@@ -485,6 +503,24 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
                 deps.storage,
                 key_address.clone()
             )?.unwrap_or_default();
+
+            // Calculate user's total delegated amount by subtracting undelegated amount
+            let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
+                deps.storage,
+                key_address.to_string()
+            )?.unwrap_or_default();
+
+            user_total_delegated = user_total_delegated
+                .checked_sub(Uint128::from(first_unbond.amount))
+                .unwrap();
+
+            USER_TOTAL_DELEGATED.save(
+                deps.storage,
+                key_address.to_string(),
+                &user_total_delegated
+            )?;
+            //////////////////////////////////////////
+
             for i in 0..withdrawals.len() {
                 if
                     withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
@@ -568,6 +604,20 @@ pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractErr
             deps.storage,
             key_address.clone()
         )?.unwrap_or_default();
+
+        // Calculate user's total delegated amount by subtracting undelegated amount
+        let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
+            deps.storage,
+            key_address.to_string()
+        )?.unwrap_or_default();
+
+        user_total_delegated = user_total_delegated
+            .checked_sub(Uint128::from(first_unbond.amount))
+            .unwrap();
+
+        USER_TOTAL_DELEGATED.save(deps.storage, key_address.to_string(), &user_total_delegated)?;
+        //////////////////////////////////////////
+
         for i in 0..withdrawals.len() {
             if
                 withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
@@ -861,6 +911,17 @@ pub fn query_user_info(deps: Deps, address: String) -> StdResult<QueryResponse> 
     });
 
     let answer = user_info.to_answer();
+    return Ok(answer);
+}
+
+pub fn query_user_total_delegated(deps: Deps, address: String) -> StdResult<QueryResponse> {
+    let user_total_delegated = USER_TOTAL_DELEGATED.may_load(
+        deps.storage,
+        address
+    )?.unwrap_or_default();
+    let answer = msg::QueryResponse::UserTotalDelegated {
+        total_delegated: user_total_delegated,
+    };
     return Ok(answer);
 }
 
