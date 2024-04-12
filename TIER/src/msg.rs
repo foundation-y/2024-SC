@@ -66,6 +66,7 @@ pub enum ExecuteMsg {
     Redelegate {
         new_validator_address: String,
         old_validator_address: String,
+        delegate_ratio: u128,
         recipient: Option<String>,
     },
 }

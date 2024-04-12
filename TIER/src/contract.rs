@@ -37,6 +37,7 @@ use crate::msg::{
     ResponseStatus,
     SerializedUnbonds,
     SerializedWithdrawals,
+    ValidatorWithWeight,
 };
 use crate::state::{
     self,
@@ -132,13 +133,20 @@ pub fn execute(
         ExecuteMsg::WithdrawRewards { recipient, .. } => {
             try_withdraw_rewards(deps, env, info, recipient)
         }
-        ExecuteMsg::Redelegate { new_validator_address, old_validator_address, recipient, .. } =>
+        ExecuteMsg::Redelegate {
+            new_validator_address,
+            old_validator_address,
+            delegate_ratio,
+            recipient,
+            ..
+        } =>
             try_redelegate(
                 deps,
                 env,
                 info,
                 new_validator_address,
                 old_validator_address,
+                delegate_ratio,
                 recipient
             ),
     };
@@ -794,6 +802,7 @@ pub fn try_redelegate(
     info: MessageInfo,
     new_validator_address: String,
     old_validator_address: String,
+    delegate_ratio: u128,
     recipient: Option<String>
 ) -> Result<Response, ContractError> {
     let mut config: Config = CONFIG_ITEM.load(deps.storage)?;
@@ -802,13 +811,13 @@ pub fn try_redelegate(
     }
 
     // Validate new and old validator addresses
-    let validated_new_one = deps.api.addr_validate(&new_validator_address).unwrap();
-    assert_eq!(validated_new_one, new_validator_address);
-    let validated_old_one = deps.api.addr_validate(&old_validator_address).unwrap();
-    assert_eq!(validated_old_one, old_validator_address);
+    // let validated_new_one = deps.api.addr_validate(&new_validator_address).unwrap();
+    // assert_eq!(validated_new_one, new_validator_address);
+    // let validated_old_one = deps.api.addr_validate(&old_validator_address).unwrap();
+    // assert_eq!(validated_old_one, old_validator_address);
 
     // Check if the old_validator_address is in the contract's validators
-    if config.validators.iter().any(|validator| validator.address != old_validator_address) {
+    if config.validators.iter().all(|validator| validator.address != old_validator_address) {
         return Err(
             ContractError::Std(
                 StdError::generic_err(
@@ -818,20 +827,59 @@ pub fn try_redelegate(
         );
     }
 
-    let delegation = utils::query_delegation(&deps, &env, &old_validator_address);
+    if delegate_ratio > 100 || delegate_ratio == 0 {
+        return Err(
+            ContractError::Std(StdError::generic_err("Redelegate ratio have to be from 1 to 100!"))
+        );
+    }
+
+    let delegation = utils::query_delegation(&deps, &env, &old_validator_address)?;
 
     if old_validator_address == new_validator_address {
         return Err(ContractError::Std(StdError::generic_err("Redelegation to the same validator")));
     }
 
-    if delegation.is_err() {
+    if delegation.is_none() {
         // Replace old_validator_address with new_validator_address
         if
-            let Some(position) = config.validators
+            let Some(old_validator_position) = config.validators
                 .iter()
                 .position(|validator| validator.address == old_validator_address)
         {
-            config.validators[position].address = new_validator_address.clone();
+            let old_validator = config.validators[old_validator_position].clone();
+            let changed_weight = old_validator.weight
+                .checked_mul(delegate_ratio)
+                .unwrap()
+                .checked_div(100)
+                .unwrap();
+            if
+                let Some(new_validator_position) = config.validators
+                    .iter()
+                    .position(|validator| validator.address == new_validator_address)
+            {
+                // New validator address is in the list
+                let new_validator = config.validators[new_validator_position].clone();
+                config.validators[new_validator_position].weight = new_validator.weight
+                    .checked_add(changed_weight)
+                    .unwrap();
+                config.validators[old_validator_position].weight = old_validator.weight
+                    .checked_sub(changed_weight)
+                    .unwrap();
+            } else {
+                // New validator address is not in the list
+                let new_validator_weight = changed_weight;
+                let old_validator_weight = old_validator.weight
+                    .checked_sub(changed_weight)
+                    .unwrap();
+                config.validators[old_validator_position].weight = old_validator_weight;
+                config.validators.push(ValidatorWithWeight {
+                    address: new_validator_address.clone(),
+                    weight: new_validator_weight,
+                });
+            }
+            if delegate_ratio == 100 {
+                config.validators.remove(old_validator_position);
+            }
         }
         CONFIG_ITEM.save(deps.storage, &config)?;
 
@@ -845,24 +893,58 @@ pub fn try_redelegate(
         return Ok(Response::new().set_data(answer));
     }
 
-    let delegation = delegation.unwrap().unwrap();
+    let delegation = delegation.unwrap();
     let can_withdraw = delegation.accumulated_rewards[0].amount.u128();
     let can_redelegate = delegation.can_redelegate.amount.u128();
     let delegated_amount = delegation.amount.amount.u128();
 
-    if can_redelegate != delegated_amount {
+    if
+        can_redelegate <
+        delegated_amount.checked_mul(delegate_ratio).unwrap().checked_div(100).unwrap()
+    {
         return Err(
-            ContractError::Std(StdError::generic_err("Cannot redelegate full delegation amount"))
+            ContractError::Std(StdError::generic_err("Cannot redelegate delegation amount"))
         );
     }
 
     // Replace old_validator_address with new_validator_address
     if
-        let Some(position) = config.validators
+        let Some(old_validator_position) = config.validators
             .iter()
             .position(|validator| validator.address == old_validator_address)
     {
-        config.validators[position].address = new_validator_address.clone();
+        let old_validator = config.validators[old_validator_position].clone();
+        let changed_weight = old_validator.weight
+            .checked_mul(delegate_ratio)
+            .unwrap()
+            .checked_div(100)
+            .unwrap();
+        if
+            let Some(new_validator_position) = config.validators
+                .iter()
+                .position(|validator| validator.address == new_validator_address)
+        {
+            // New validator address is in the list
+            let new_validator = config.validators[new_validator_position].clone();
+            config.validators[new_validator_position].weight = new_validator.weight
+                .checked_add(changed_weight)
+                .unwrap();
+            config.validators[old_validator_position].weight = old_validator.weight
+                .checked_sub(changed_weight)
+                .unwrap();
+        } else {
+            // New validator address is not in the list
+            let new_validator_weight = changed_weight;
+            let old_validator_weight = old_validator.weight.checked_sub(changed_weight).unwrap();
+            config.validators[old_validator_position].weight = old_validator_weight;
+            config.validators.push(ValidatorWithWeight {
+                address: new_validator_address.clone(),
+                weight: new_validator_weight,
+            });
+        }
+        if delegate_ratio == 100 {
+            config.validators.remove(old_validator_position);
+        }
     }
     CONFIG_ITEM.save(deps.storage, &config)?;
 
@@ -879,7 +961,12 @@ pub fn try_redelegate(
         messages.push(msg);
     }
 
-    let coin = coin(can_redelegate, ORAI);
+    let redelegated_amount = can_redelegate
+        .checked_mul(delegate_ratio)
+        .unwrap()
+        .checked_div(100)
+        .unwrap();
+    let coin = coin(redelegated_amount, ORAI);
     let redelegate_msg = StakingMsg::Redelegate {
         src_validator: old_validator_address,
         dst_validator: new_validator_address,

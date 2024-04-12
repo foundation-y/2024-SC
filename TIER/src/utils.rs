@@ -1,6 +1,6 @@
 use crate::contract::ORAI;
-use cosmwasm_std::{Addr, Coin, DepsMut, Env, FullDelegation, StdResult};
-use serde::Deserialize;
+use cosmwasm_std::{ Addr, Coin, DepsMut, Env, FullDelegation, StdResult };
+use serde::{ de, Deserialize };
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,10 +19,7 @@ pub struct FixedFullDelegation {
 
 impl From<FixedFullDelegation> for FullDelegation {
     fn from(val: FixedFullDelegation) -> Self {
-        let found_rewards = val
-            .accumulated_rewards
-            .into_iter()
-            .find(|r| r.denom == ORAI);
+        let found_rewards = val.accumulated_rewards.into_iter().find(|r| r.denom == ORAI);
 
         let accumulated_rewards = found_rewards.unwrap_or_else(|| Coin::new(0, ORAI));
         FullDelegation {
@@ -38,11 +35,10 @@ impl From<FixedFullDelegation> for FullDelegation {
 pub fn query_delegation(
     deps: &DepsMut,
     env: &Env,
-    validator: &String,
+    validator: &String
 ) -> StdResult<Option<FullDelegation>> {
-    let delegation = deps
-        .querier
-        .query_delegation(&env.contract.address, validator)?;
-
-    Ok(delegation)
+    match deps.querier.query_delegation(&env.contract.address, validator) {
+        Ok(delegation) => Ok(delegation),
+        Err(_) => Ok(None),
+    }
 }
