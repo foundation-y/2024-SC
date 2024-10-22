@@ -5,11 +5,12 @@ import { MsgBroadcasterWithPk } from '@injectivelabs/sdk-ts';
 import fs from 'fs';
 import path from 'path';
 import { DEFAULT_GAS_PRICE } from '@injectivelabs/utils';
-import { getINJBalance, getTxInfo } from '../utils/helper';
+import { getINJBalance, getKeyValue, getTxInfo } from '../utils/helper';
 
 config();
 
 const { NETWORK, MNEMONIC } = process.env;
+// 1. Specify wasm file path
 const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
 
 (async () => {
@@ -36,6 +37,8 @@ const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
     const wasmBytes = fs.readFileSync(contractWasmPath);
     const codeUploadMsg = MsgStoreCode.fromJSON({ sender: address, wasmBytes });
 
+    console.log(codeUploadMsg.toAmino().type);
+
     console.log('\nSimulating transaction........');
     const codeUploadSimulationResponse = await broadcaster.simulate({
         msgs: codeUploadMsg,
@@ -59,25 +62,25 @@ const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
         NETWORK === 'mainnet' ? undefined : 'testnet'
     );
 
-    if (codeUploadTx.s !== 'ok') return console.log('Unable to retrieve transaction');
+    const code_id = getKeyValue(codeUploadTx, 'cosmwasm.wasm.v1.EventCodeStored', 'code_id');
 
-    const events = codeUploadTx.data.logs[0].events as any[];
-    const attributes: any[] =
-        events.find(({ type }) => type === 'cosmwasm.wasm.v1.EventCodeStored')?.attributes || [];
-    const code_id = attributes.find(({ key }) => key === 'code_id')?.value;
-    if (!code_id) return console.log('Could not get code id');
-
-    const initMsg = {};
+    // 2. Provide inistantiate message
+    const initMsg = {
+        lock_periods: ['864000', '1209600', '1209600', '1209600', '1209600'],
+        nft_contract: address, // FIXME: not valid pls, just to test contract instantiation
+        tier_contract: address, // FIXME: not valid pls, just to test contract instantiation
+    };
 
     const instantiateMsg = MsgInstantiateContract.fromJSON({
         sender: address,
         admin: address,
-        codeId: JSON.parse(code_id),
+        codeId: Number(JSON.parse(code_id)),
         label: 'Yoiu Contract',
         msg: initMsg,
     });
 
-    console.log(instantiateMsg);
+    console.log(instantiateMsg.toData());
+    console.log(instantiateMsg.toAmino().type);
 
     console.log('\nSimulating instantiate contract transaction........');
     const instantiateSimulationResponse = await broadcaster.simulate({
@@ -102,17 +105,11 @@ const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
         NETWORK === 'mainnet' ? undefined : 'testnet'
     );
 
-    if (instantiateTx.s !== 'ok')
-        return console.log('Unable to retrieve instantiate contract transaction');
-
-    const instantiateEvents = instantiateTx.data.logs[0].events as any[];
-    const instantiateAttributes: any[] =
-        instantiateEvents.find(({ type }) => type === 'cosmwasm.wasm.v1.EventContractInstantiated')
-            ?.attributes || [];
-    const contractAddress = instantiateAttributes.find(
-        ({ key }) => key === 'contract_address'
-    )?.value;
-    if (!contractAddress) return console.log('Could not get contract address');
+    const contractAddress = getKeyValue(
+        instantiateTx,
+        'cosmwasm.wasm.v1.EventContractInstantiated',
+        'contract_address'
+    );
 
     console.log('Contract Address:', contractAddress);
 })();

@@ -23,3 +23,15 @@ export async function getTxInfo(hash: string, network: 'testnet' | undefined = '
 
     return await response.json();
 }
+
+export function getKeyValue(tx: any, messageType: string, key: string) {
+    if (tx.s !== 'ok') throw Error('Unable to retrieve instantiate contract transaction');
+
+    const events = tx.data.logs[0].events as any[];
+    const attributes: any[] = events.find(({ type }) => type === messageType)?.attributes || [];
+
+    const value = attributes.find(({ key: objKey }) => objKey === key)?.value;
+    if (!value) throw Error(`Could not retrieve value for: ${key}`);
+
+    return value;
+}
