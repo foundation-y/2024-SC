@@ -1,6 +1,6 @@
 use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -34,10 +34,7 @@ pub struct InitMsg {
 #[serde(rename_all = "snake_case")]
 pub enum PaymentMethod {
     Native,
-    Token {
-        contract: String,
-        code_hash: String,
-    },
+    Token { contract: String, code_hash: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
