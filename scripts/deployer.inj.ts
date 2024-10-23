@@ -13,7 +13,7 @@ const INJ_SWAP_ROUTER = 'inj10x2pnsjlwmdmuzu7klp25hyr222805v4h4tvns';
 
 const { NETWORK, MNEMONIC } = process.env;
 // 1. Specify wasm file path
-const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
+const contractWasmPath = path.join(__dirname, '/../TIER/artifacts/tier.wasm');
 
 (async () => {
     if (!MNEMONIC) throw new Error('MNEMONIC is missing');
@@ -66,26 +66,28 @@ const contractWasmPath = path.join(__dirname, '/../IDO/artifacts/ido.wasm');
     console.log('Code ID: ', code_id);
 
     // 2. Provide inistantiate message
-    // const initMsg = {
-    //     validators: [
-    //         {
-    //             address: 'injvaloper1cq6mvxqp978f6lxrh5s6c35ddr2slcj9h7tqng',
-    //             weight: '100',
-    //         },
-    //     ],
-    //     oraiswap_contract: {
-    //         usdt_contract: 'peggy0x87aB3B4C8661e07D6372361211B96ed4Dc36B1B5',
-    //         orai_swap_router_contract: INJ_SWAP_ROUTER,
-    //     },
-    //     deposits: ['25000', '7500', '1500', '250'],
-    //     admin: address,
-    // };
-
+    // For TIER
     const initMsg = {
-        lock_periods: [864000, 1209600, 1209600, 1209600, 1209600],
-        nft_contract: 'inj19ly43dgrr2vce8h02a8nw0qujwhrzm9yv8d75c',
-        tier_contract: 'inj15nmkxpn9a4lfd5e555ggeldte0zlqmm9695h77',
+        validators: [
+            {
+                address: 'injvaloper1cq6mvxqp978f6lxrh5s6c35ddr2slcj9h7tqng',
+                weight: '100',
+            },
+        ],
+        oraiswap_contract: {
+            usdt_contract: 'peggy0x87aB3B4C8661e07D6372361211B96ed4Dc36B1B5',
+            orai_swap_router_contract: INJ_SWAP_ROUTER,
+        },
+        deposits: ['25000', '7500', '1500', '250'],
+        admin: address,
     };
+
+    // FOR IDO
+    // const initMsg = {
+    //     lock_periods: [864000, 1209600, 1209600, 1209600, 1209600],
+    //     nft_contract: 'inj19ly43dgrr2vce8h02a8nw0qujwhrzm9yv8d75c',
+    //     tier_contract: 'inj15nmkxpn9a4lfd5e555ggeldte0zlqmm9695h77',
+    // };
 
     const instantiateMsg = MsgInstantiateContract.fromJSON({
         sender: address,

@@ -1,22 +1,8 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    coin,
-    coins,
-    to_json_binary,
-    BankMsg,
-    Binary,
-    Coin,
-    CosmosMsg,
-    Deps,
-    DepsMut,
-    Env,
-    FullDelegation,
-    MessageInfo,
-    Response,
-    StdResult,
-    SubMsg,
-    Uint128,
+    coin, coins, to_json_binary, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
+    FullDelegation, MessageInfo, Response, StdResult, SubMsg, Uint128,
 };
 
 use cosmwasm_std::DistributionMsg;
@@ -26,29 +12,12 @@ use crate::band::OraiPriceOracle;
 // use crate::utils;
 use crate::error::ContractError;
 use crate::msg::{
-    self,
-    ContractStatus,
-    ExecuteMsg,
-    ExecuteResponse,
-    InstantiateMsg,
-    OraiswapContract,
-    QueryMsg,
-    QueryResponse,
-    ResponseStatus,
-    SerializedUnbonds,
-    SerializedWithdrawals,
-    ValidatorWithWeight,
+    self, ContractStatus, ExecuteMsg, ExecuteResponse, InstantiateMsg, OraiswapContract, QueryMsg,
+    QueryResponse, ResponseStatus, SerializedUnbonds, SerializedWithdrawals, ValidatorWithWeight,
 };
 use crate::state::{
-    self,
-    Config,
-    UserUnbond,
-    UserWithdrawal,
-    CONFIG_ITEM,
-    UNBOND_LIST,
-    USER_INFOS,
-    USER_TOTAL_DELEGATED,
-    WITHDRAWALS_LIST,
+    self, Config, UserUnbond, UserWithdrawal, CONFIG_ITEM, UNBOND_LIST, USER_INFOS,
+    USER_TOTAL_DELEGATED, WITHDRAWALS_LIST,
 };
 use crate::utils;
 use cosmwasm_std::StdError;
@@ -63,38 +32,31 @@ pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     _info: MessageInfo,
-    msg: InstantiateMsg
+    msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    let deposits = msg.deposits
-        .iter()
-        .map(|v| v.u128())
-        .collect::<Vec<_>>();
+    let deposits = msg.deposits.iter().map(|v| v.u128()).collect::<Vec<_>>();
 
     if deposits.is_empty() {
-        return Err(ContractError::Std(StdError::generic_err("Deposits array is empty")));
+        return Err(ContractError::Std(StdError::generic_err(
+            "Deposits array is empty",
+        )));
     }
 
-    let is_sorted = deposits
-        .as_slice()
-        .windows(2)
-        .all(|v| v[0] > v[1]);
+    let is_sorted = deposits.as_slice().windows(2).all(|v| v[0] > v[1]);
     if !is_sorted {
-        return Err(
-            ContractError::Std(StdError::generic_err("Specify deposits in decreasing order"))
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "Specify deposits in decreasing order",
+        )));
     }
 
     // Check if the sum of the validators' weights is 100
     let validators = msg.validators;
-    let total_weight: u128 = validators
-        .iter()
-        .map(|v| v.weight)
-        .sum();
+    let total_weight: u128 = validators.iter().map(|v| v.weight).sum();
 
     if total_weight != 100 {
-        return Err(
-            ContractError::Std(StdError::generic_err("The sum of the total weight must be 100!"))
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "The sum of the total weight must be 100!",
+        )));
     }
 
     let admin = msg.admin.unwrap_or("".to_string());
@@ -118,18 +80,24 @@ pub fn execute(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: ExecuteMsg
+    msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     let response = match msg {
         ExecuteMsg::ChangeAdmin { admin, .. } => try_change_admin(deps, env, info, admin),
         ExecuteMsg::ChangeStatus { status, .. } => try_change_status(deps, env, info, status),
-        ExecuteMsg::ChangeOraiswap { oraiswap_router_contract, usdt_contract } =>
-            try_change_oraiswap(deps, env, info, oraiswap_router_contract, usdt_contract),
+        ExecuteMsg::ChangeOraiswap {
+            oraiswap_router_contract,
+            usdt_contract,
+        } => try_change_oraiswap(deps, env, info, oraiswap_router_contract, usdt_contract),
         ExecuteMsg::Deposit { .. } => try_deposit(deps, env, info),
         ExecuteMsg::Withdraw { .. } => try_withdraw(deps, env, info),
         ExecuteMsg::BatchUnbond { .. } => try_batch_unbond(deps, env),
-        ExecuteMsg::Claim { recipient, start, limit, .. } =>
-            try_claim(deps, env, info, recipient, start, limit),
+        ExecuteMsg::Claim {
+            recipient,
+            start,
+            limit,
+            ..
+        } => try_claim(deps, env, info, recipient, start, limit),
         ExecuteMsg::WithdrawRewards { recipient, .. } => {
             try_withdraw_rewards(deps, env, info, recipient)
         }
@@ -139,16 +107,15 @@ pub fn execute(
             delegate_ratio,
             recipient,
             ..
-        } =>
-            try_redelegate(
-                deps,
-                env,
-                info,
-                new_validator_address,
-                old_validator_address,
-                delegate_ratio,
-                recipient
-            ),
+        } => try_redelegate(
+            deps,
+            env,
+            info,
+            new_validator_address,
+            old_validator_address,
+            delegate_ratio,
+            recipient,
+        ),
     };
 
     return response;
@@ -159,10 +126,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
         QueryMsg::UserInfo { address } => to_json_binary(&query_user_info(deps, address)?),
-        QueryMsg::UserTotalDelegated { address } =>
-            to_json_binary(&query_user_total_delegated(deps, address)?),
-        QueryMsg::Withdrawals { address, start, limit } =>
-            to_json_binary(&query_withdrawals(deps, address, start, limit)?),
+        QueryMsg::UserTotalDelegated { address } => {
+            to_json_binary(&query_user_total_delegated(deps, address)?)
+        }
+        QueryMsg::Withdrawals {
+            address,
+            start,
+            limit,
+        } => to_json_binary(&query_withdrawals(deps, address, start, limit)?),
         QueryMsg::Unbonds {} => to_json_binary(&query_unbonds(deps)?),
     }
 }
@@ -171,20 +142,17 @@ pub fn try_change_admin(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    new_admin: String
+    new_admin: String,
 ) -> Result<Response, ContractError> {
     let config: Config = CONFIG_ITEM.load(deps.storage)?;
     if info.sender.clone() != config.admin {
         return Err(ContractError::Std(StdError::generic_err("Unauthorized")));
     }
 
-    CONFIG_ITEM.update(
-        deps.storage,
-        |mut exists| -> StdResult<_> {
-            exists.admin = new_admin;
-            Ok(exists)
-        }
-    )?;
+    CONFIG_ITEM.update(deps.storage, |mut exists| -> StdResult<_> {
+        exists.admin = new_admin;
+        Ok(exists)
+    })?;
 
     Ok(Response::new().add_attribute("action", "changed admin"))
 }
@@ -193,7 +161,7 @@ pub fn try_change_status(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    status: ContractStatus
+    status: ContractStatus,
 ) -> Result<Response, ContractError> {
     let config: Config = CONFIG_ITEM.load(deps.storage)?;
     if info.sender.clone() != config.admin {
@@ -202,19 +170,14 @@ pub fn try_change_status(
 
     // Check the status is not set to the same value
     if status == config.status.into() {
-        return Err(
-            ContractError::Std(
-                StdError::generic_err("Trying to change the status to the same value...")
-            )
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "Trying to change the status to the same value...",
+        )));
     } else {
-        CONFIG_ITEM.update(
-            deps.storage,
-            |mut exists| -> StdResult<_> {
-                exists.status = status as u8;
-                Ok(exists)
-            }
-        )?;
+        CONFIG_ITEM.update(deps.storage, |mut exists| -> StdResult<_> {
+            exists.status = status as u8;
+            Ok(exists)
+        })?;
     }
 
     Ok(Response::new().add_attribute("action", "changed status"))
@@ -225,7 +188,7 @@ pub fn try_change_oraiswap(
     _env: Env,
     info: MessageInfo,
     oraiswap_router_contract: String,
-    usdt_contract: String
+    usdt_contract: String,
 ) -> Result<Response, ContractError> {
     let mut config: Config = CONFIG_ITEM.load(deps.storage)?;
     if info.sender.clone() != config.admin {
@@ -239,13 +202,12 @@ pub fn try_change_oraiswap(
     assert_eq!(validated_usdt, usdt_contract);
 
     // Change Oraiswap contracts
-    if
-        config.oraiswap_contract.orai_swap_router_contract == oraiswap_router_contract &&
-        config.oraiswap_contract.usdt_contract == usdt_contract
+    if config.oraiswap_contract.orai_swap_router_contract == oraiswap_router_contract
+        && config.oraiswap_contract.usdt_contract == usdt_contract
     {
-        return Err(
-            ContractError::Std(StdError::generic_err("Trying to change to the same addresses."))
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "Trying to change to the same addresses.",
+        )));
     } else {
         config.oraiswap_contract = OraiswapContract {
             orai_swap_router_contract: oraiswap_router_contract,
@@ -268,21 +230,26 @@ pub fn get_received_funds(_deps: &DepsMut, info: &MessageInfo) -> Result<Coin, C
         Some(received) => {
             /* Amount of tokens received cannot be zero */
             if received.amount.is_zero() {
-                return Err(ContractError::Std(StdError::generic_err("Not Allow Zero Amount")));
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Not Allow Zero Amount",
+                )));
             }
 
             /* Allow to receive only token denomination defined
             on contract instantiation "config.stable_denom" */
-            if
-                received.denom.clone() != "orai" &&
-                config.stable_denom.contains(&received.denom.clone()) == false
+            if received.denom.clone() != "orai"
+                && config.stable_denom.contains(&received.denom.clone()) == false
             {
-                return Err(ContractError::Std(StdError::generic_err("Unsopported token")));
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Unsopported token",
+                )));
             }
 
             /* Only one token can be received */
             if info.funds.len() > 1 {
-                return Err(ContractError::Std(StdError::generic_err("Not Allowed Multiple Funds")));
+                return Err(ContractError::Std(StdError::generic_err(
+                    "Not Allowed Multiple Funds",
+                )));
             }
             Ok(received.clone())
         }
@@ -304,10 +271,12 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
     let sender = info.sender.to_string();
     let min_tier = config.min_tier();
 
-    let mut user_info = USER_INFOS.may_load(deps.storage, sender)?.unwrap_or(state::UserInfo {
-        tier: min_tier,
-        ..Default::default()
-    });
+    let mut user_info = USER_INFOS
+        .may_load(deps.storage, sender)?
+        .unwrap_or(state::UserInfo {
+            tier: min_tier,
+            ..Default::default()
+        });
     let current_tier = user_info.tier;
     let old_usd_deposit = user_info.usd_deposit;
     let old_orai_deposit = user_info.orai_deposit;
@@ -317,7 +286,9 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
 
     if current_tier == new_tier {
         if current_tier == config.max_tier() {
-            return Err(ContractError::Std(StdError::generic_err("Reached max tier")));
+            return Err(ContractError::Std(StdError::generic_err(
+                "Reached max tier",
+            )));
         }
 
         let next_tier = current_tier.checked_sub(1).unwrap();
@@ -328,8 +299,7 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
 
         let err_msg = format!(
             "You should deposit at least {} USD ({} ORAI)",
-            expected_deposit_usd,
-            expected_deposit_orai
+            expected_deposit_usd, expected_deposit_orai
         );
 
         return Err(ContractError::Std(StdError::generic_err(&err_msg)));
@@ -363,10 +333,9 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
     user_info.orai_deposit = orai_deposit;
 
     // Calculate user's total delegated amount
-    let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
-        deps.storage,
-        info.sender.to_string()
-    )?.unwrap_or_default();
+    let mut user_total_delegated = USER_TOTAL_DELEGATED
+        .may_load(deps.storage, info.sender.to_string())?
+        .unwrap_or_default();
 
     user_total_delegated = user_total_delegated
         .checked_add(Uint128::from(orai_deposit))
@@ -382,9 +351,12 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
     let validators = config.validators;
 
     for validator in validators {
-        let individual_amount =
-            (user_info.orai_deposit.checked_sub(old_orai_deposit).unwrap() * validator.weight) /
-            100;
+        let individual_amount = (user_info
+            .orai_deposit
+            .checked_sub(old_orai_deposit)
+            .unwrap()
+            * validator.weight)
+            / 100;
         let delegate_msg = StakingMsg::Delegate {
             validator: validator.address,
             amount: coin(individual_amount, ORAI),
@@ -400,7 +372,7 @@ pub fn try_deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respons
             orai_deposit: Uint128::new(user_info.orai_deposit),
             tier: new_tier,
             status: ResponseStatus::Success,
-        })
+        }),
     )?;
 
     Ok(Response::new().add_submessages(messages).set_data(answer))
@@ -415,10 +387,12 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     let sender = info.sender.to_string();
 
     let min_tier = config.min_tier();
-    let user_info = USER_INFOS.may_load(deps.storage, sender)?.unwrap_or(state::UserInfo {
-        tier: min_tier,
-        ..Default::default()
-    });
+    let user_info = USER_INFOS
+        .may_load(deps.storage, sender)?
+        .unwrap_or(state::UserInfo {
+            tier: min_tier,
+            ..Default::default()
+        });
 
     let mut amount: u128 = user_info.orai_deposit;
 
@@ -427,12 +401,9 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
     let mut total_staked = 0;
 
     // Get the total staked amount
-    let delegated_iterator: Vec<_> = USER_TOTAL_DELEGATED.range(
-        deps.storage,
-        None,
-        None,
-        cosmwasm_std::Order::Ascending
-    ).collect::<_>();
+    let delegated_iterator: Vec<_> = USER_TOTAL_DELEGATED
+        .range(deps.storage, None, None, cosmwasm_std::Order::Ascending)
+        .collect::<_>();
 
     for delegate in delegated_iterator {
         let temp = delegate.unwrap();
@@ -443,7 +414,8 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
 
     // Get total delegated amount from all validators considering with slashing
     for validator in config.validators.clone() {
-        let current_delegate: Option<FullDelegation> = deps.querier
+        let current_delegate: Option<FullDelegation> = deps
+            .querier
             .query_delegation(contract_address.clone(), validator.clone().address)
             .unwrap();
 
@@ -474,10 +446,9 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         claim_time,
     };
 
-    let mut withdrawals = WITHDRAWALS_LIST.may_load(
-        deps.storage,
-        info.sender.to_string()
-    )?.unwrap_or_default();
+    let mut withdrawals = WITHDRAWALS_LIST
+        .may_load(deps.storage, info.sender.to_string())?
+        .unwrap_or_default();
 
     withdrawals.push(withdrawal);
     WITHDRAWALS_LIST.save(deps.storage, info.sender.to_string(), &withdrawals)?;
@@ -507,16 +478,14 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
             first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
             total_batch_undelegate_amount += first_unbond.amount;
             let key_address = first_unbond.address.to_string();
-            let mut withdrawals = WITHDRAWALS_LIST.may_load(
-                deps.storage,
-                key_address.clone()
-            )?.unwrap_or_default();
+            let mut withdrawals = WITHDRAWALS_LIST
+                .may_load(deps.storage, key_address.clone())?
+                .unwrap_or_default();
 
             // Calculate user's total delegated amount by subtracting undelegated amount
-            let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
-                deps.storage,
-                key_address.to_string()
-            )?.unwrap_or_default();
+            let mut user_total_delegated = USER_TOTAL_DELEGATED
+                .may_load(deps.storage, key_address.to_string())?
+                .unwrap_or_default();
 
             user_total_delegated = user_total_delegated
                 .checked_sub(Uint128::from(first_unbond.amount))
@@ -525,15 +494,14 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
             USER_TOTAL_DELEGATED.save(
                 deps.storage,
                 key_address.to_string(),
-                &user_total_delegated
+                &user_total_delegated,
             )?;
             //////////////////////////////////////////
 
             for i in 0..withdrawals.len() {
-                if
-                    withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
-                    withdrawals[i].amount == first_unbond.amount &&
-                    withdrawals[i].timestamp == first_unbond.timestamp
+                if withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP
+                    && withdrawals[i].amount == first_unbond.amount
+                    && withdrawals[i].timestamp == first_unbond.timestamp
                 {
                     withdrawals[i].claim_time = current_time.checked_add(UNBOUND_TIME).unwrap();
                 }
@@ -553,10 +521,8 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
             let weight_as_uint128 = Uint128::from(validator.weight);
 
             // Perform the multiplication - Uint128 * Uint128
-            let multiplied = Uint128::from(confirmed_amount).multiply_ratio(
-                weight_as_uint128,
-                Uint128::from(100_u128)
-            );
+            let multiplied = Uint128::from(confirmed_amount)
+                .multiply_ratio(weight_as_uint128, Uint128::from(100_u128));
 
             // Now, `multiplied` is Uint128, but we want the result as u128
             let individual_amount: u128 = multiplied.u128();
@@ -572,14 +538,12 @@ pub fn try_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Respon
         let answer = to_json_binary(
             &(ExecuteResponse::Withdraw {
                 status: ResponseStatus::Success,
-            })
+            }),
         )?;
-        Ok(
-            Response::new()
-                .add_submessages(messages)
-                .set_data(answer)
-                .add_attribute("action", "Add to withdraw list and batch unbond done!")
-        )
+        Ok(Response::new()
+            .add_submessages(messages)
+            .set_data(answer)
+            .add_attribute("action", "Add to withdraw list and batch unbond done!"))
     } else {
         Ok(Response::new().add_attribute("action", "Add to withdraw list!"))
     }
@@ -608,16 +572,14 @@ pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractErr
         first_unbond = UNBOND_LIST.front(deps.storage)?.unwrap();
         total_batch_undelegate_amount += first_unbond.amount;
         let key_address = first_unbond.address.to_string();
-        let mut withdrawals = WITHDRAWALS_LIST.may_load(
-            deps.storage,
-            key_address.clone()
-        )?.unwrap_or_default();
+        let mut withdrawals = WITHDRAWALS_LIST
+            .may_load(deps.storage, key_address.clone())?
+            .unwrap_or_default();
 
         // Calculate user's total delegated amount by subtracting undelegated amount
-        let mut user_total_delegated = USER_TOTAL_DELEGATED.may_load(
-            deps.storage,
-            key_address.to_string()
-        )?.unwrap_or_default();
+        let mut user_total_delegated = USER_TOTAL_DELEGATED
+            .may_load(deps.storage, key_address.to_string())?
+            .unwrap_or_default();
 
         user_total_delegated = user_total_delegated
             .checked_sub(Uint128::from(first_unbond.amount))
@@ -627,10 +589,9 @@ pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractErr
         //////////////////////////////////////////
 
         for i in 0..withdrawals.len() {
-            if
-                withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP &&
-                withdrawals[i].amount == first_unbond.amount &&
-                withdrawals[i].timestamp == first_unbond.timestamp
+            if withdrawals[i].claim_time == MAX_UNIX_TIMESTAMP
+                && withdrawals[i].amount == first_unbond.amount
+                && withdrawals[i].timestamp == first_unbond.timestamp
             {
                 withdrawals[i].claim_time = current_time.checked_add(UNBOUND_TIME).unwrap();
             }
@@ -650,10 +611,8 @@ pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractErr
         let weight_as_uint128 = Uint128::from(validator.weight);
 
         // Perform the multiplication - Uint128 * Uint128
-        let multiplied = Uint128::from(confirmed_amount).multiply_ratio(
-            weight_as_uint128,
-            Uint128::from(100_u128)
-        );
+        let multiplied = Uint128::from(confirmed_amount)
+            .multiply_ratio(weight_as_uint128, Uint128::from(100_u128));
 
         // Now, `multiplied` is Uint128, but we want the result as u128
         let individual_amount: u128 = multiplied.u128();
@@ -669,7 +628,7 @@ pub fn try_batch_unbond(deps: DepsMut, env: Env) -> Result<Response, ContractErr
     let answer = to_json_binary(
         &(ExecuteResponse::Withdraw {
             status: ResponseStatus::Success,
-        })
+        }),
     )?;
 
     Ok(Response::new().add_submessages(messages).set_data(answer))
@@ -681,29 +640,29 @@ pub fn try_claim(
     info: MessageInfo,
     recipient: Option<String>,
     start: Option<u32>,
-    limit: Option<u32>
+    limit: Option<u32>,
 ) -> Result<Response, ContractError> {
     let config = CONFIG_ITEM.load(deps.storage)?;
     config.assert_contract_active()?;
 
     let sender = info.sender.to_string();
-    let mut withdrawals: Vec<UserWithdrawal> = WITHDRAWALS_LIST.may_load(
-        deps.storage,
-        sender
-    )?.unwrap_or_default();
+    let mut withdrawals: Vec<UserWithdrawal> = WITHDRAWALS_LIST
+        .may_load(deps.storage, sender)?
+        .unwrap_or_default();
 
     let length = withdrawals.len();
 
     if length == 0 {
-        return Err(ContractError::Std(StdError::generic_err("Nothing to claim")));
+        return Err(ContractError::Std(StdError::generic_err(
+            "Nothing to claim",
+        )));
     }
 
     let recipient = recipient.unwrap_or(info.sender.to_string());
     let start: usize = start.unwrap_or(0) as usize;
     let limit = limit.unwrap_or(50) as usize;
-    let withdrawals_iter: std::iter::Take<
-        std::iter::Skip<std::slice::Iter<'_, UserWithdrawal>>
-    > = withdrawals.iter().skip(start).take(limit);
+    let withdrawals_iter: std::iter::Take<std::iter::Skip<std::slice::Iter<'_, UserWithdrawal>>> =
+        withdrawals.iter().skip(start).take(limit);
 
     let current_time = env.block.time.seconds();
     let mut remove_indices = Vec::new();
@@ -719,7 +678,9 @@ pub fn try_claim(
     }
 
     if claim_amount == 0 {
-        return Err(ContractError::Std(StdError::generic_err("Nothing to claim")));
+        return Err(ContractError::Std(StdError::generic_err(
+            "Nothing to claim",
+        )));
     }
 
     for (shift, index) in remove_indices.into_iter().enumerate() {
@@ -737,7 +698,7 @@ pub fn try_claim(
         &(ExecuteResponse::Claim {
             amount: claim_amount.into(),
             status: ResponseStatus::Success,
-        })
+        }),
     )?;
 
     Ok(Response::new().add_message(msg).set_data(answer))
@@ -747,7 +708,7 @@ pub fn try_withdraw_rewards(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    recipient: Option<String>
+    recipient: Option<String>,
 ) -> Result<Response, ContractError> {
     let config: Config = CONFIG_ITEM.load(deps.storage)?;
     if info.sender.clone() != config.admin {
@@ -779,18 +740,16 @@ pub fn try_withdraw_rewards(
     }
 
     if total_withdraw_amount == 0 {
-        return Err(
-            ContractError::Std(
-                StdError::generic_err("There is nothing to withdraw from validators")
-            )
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "There is nothing to withdraw from validators",
+        )));
     }
 
     let answer = to_json_binary(
         &(ExecuteResponse::WithdrawRewards {
             amount: Uint128::new(total_withdraw_amount),
             status: ResponseStatus::Success,
-        })
+        }),
     )?;
 
     Ok(Response::new().add_messages(msgs).set_data(answer))
@@ -803,7 +762,7 @@ pub fn try_redelegate(
     new_validator_address: String,
     old_validator_address: String,
     delegate_ratio: u128,
-    recipient: Option<String>
+    recipient: Option<String>,
 ) -> Result<Response, ContractError> {
     let mut config: Config = CONFIG_ITEM.load(deps.storage)?;
     if info.sender.clone() != config.admin {
@@ -817,7 +776,11 @@ pub fn try_redelegate(
     // assert_eq!(validated_old_one, old_validator_address);
 
     // Check if the old_validator_address is in the contract's validators
-    if config.validators.iter().all(|validator| validator.address != old_validator_address) {
+    if config
+        .validators
+        .iter()
+        .all(|validator| validator.address != old_validator_address)
+    {
         return Err(
             ContractError::Std(
                 StdError::generic_err(
@@ -828,49 +791,49 @@ pub fn try_redelegate(
     }
 
     if delegate_ratio > 100 || delegate_ratio == 0 {
-        return Err(
-            ContractError::Std(StdError::generic_err("Redelegate ratio have to be from 1 to 100!"))
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "Redelegate ratio have to be from 1 to 100!",
+        )));
     }
 
     let delegation = utils::query_delegation(&deps, &env, &old_validator_address)?;
 
     if old_validator_address == new_validator_address {
-        return Err(ContractError::Std(StdError::generic_err("Redelegation to the same validator")));
+        return Err(ContractError::Std(StdError::generic_err(
+            "Redelegation to the same validator",
+        )));
     }
 
     if delegation.is_none() {
         // Replace old_validator_address with new_validator_address
-        if
-            let Some(old_validator_position) = config.validators
-                .iter()
-                .position(|validator| validator.address == old_validator_address)
+        if let Some(old_validator_position) = config
+            .validators
+            .iter()
+            .position(|validator| validator.address == old_validator_address)
         {
             let old_validator = config.validators[old_validator_position].clone();
-            let changed_weight = old_validator.weight
+            let changed_weight = old_validator
+                .weight
                 .checked_mul(delegate_ratio)
                 .unwrap()
                 .checked_div(100)
                 .unwrap();
-            if
-                let Some(new_validator_position) = config.validators
-                    .iter()
-                    .position(|validator| validator.address == new_validator_address)
+            if let Some(new_validator_position) = config
+                .validators
+                .iter()
+                .position(|validator| validator.address == new_validator_address)
             {
                 // New validator address is in the list
                 let new_validator = config.validators[new_validator_position].clone();
-                config.validators[new_validator_position].weight = new_validator.weight
-                    .checked_add(changed_weight)
-                    .unwrap();
-                config.validators[old_validator_position].weight = old_validator.weight
-                    .checked_sub(changed_weight)
-                    .unwrap();
+                config.validators[new_validator_position].weight =
+                    new_validator.weight.checked_add(changed_weight).unwrap();
+                config.validators[old_validator_position].weight =
+                    old_validator.weight.checked_sub(changed_weight).unwrap();
             } else {
                 // New validator address is not in the list
                 let new_validator_weight = changed_weight;
-                let old_validator_weight = old_validator.weight
-                    .checked_sub(changed_weight)
-                    .unwrap();
+                let old_validator_weight =
+                    old_validator.weight.checked_sub(changed_weight).unwrap();
                 config.validators[old_validator_position].weight = old_validator_weight;
                 config.validators.push(ValidatorWithWeight {
                     address: new_validator_address.clone(),
@@ -887,7 +850,7 @@ pub fn try_redelegate(
             &(ExecuteResponse::Redelegate {
                 amount: Uint128::zero(),
                 status: ResponseStatus::Success,
-            })
+            }),
         )?;
 
         return Ok(Response::new().set_data(answer));
@@ -898,40 +861,42 @@ pub fn try_redelegate(
     let can_redelegate = delegation.can_redelegate.amount.u128();
     let delegated_amount = delegation.amount.amount.u128();
 
-    if
-        can_redelegate <
-        delegated_amount.checked_mul(delegate_ratio).unwrap().checked_div(100).unwrap()
+    if can_redelegate
+        < delegated_amount
+            .checked_mul(delegate_ratio)
+            .unwrap()
+            .checked_div(100)
+            .unwrap()
     {
-        return Err(
-            ContractError::Std(StdError::generic_err("Cannot redelegate delegation amount"))
-        );
+        return Err(ContractError::Std(StdError::generic_err(
+            "Cannot redelegate delegation amount",
+        )));
     }
 
     // Replace old_validator_address with new_validator_address
-    if
-        let Some(old_validator_position) = config.validators
-            .iter()
-            .position(|validator| validator.address == old_validator_address)
+    if let Some(old_validator_position) = config
+        .validators
+        .iter()
+        .position(|validator| validator.address == old_validator_address)
     {
         let old_validator = config.validators[old_validator_position].clone();
-        let changed_weight = old_validator.weight
+        let changed_weight = old_validator
+            .weight
             .checked_mul(delegate_ratio)
             .unwrap()
             .checked_div(100)
             .unwrap();
-        if
-            let Some(new_validator_position) = config.validators
-                .iter()
-                .position(|validator| validator.address == new_validator_address)
+        if let Some(new_validator_position) = config
+            .validators
+            .iter()
+            .position(|validator| validator.address == new_validator_address)
         {
             // New validator address is in the list
             let new_validator = config.validators[new_validator_position].clone();
-            config.validators[new_validator_position].weight = new_validator.weight
-                .checked_add(changed_weight)
-                .unwrap();
-            config.validators[old_validator_position].weight = old_validator.weight
-                .checked_sub(changed_weight)
-                .unwrap();
+            config.validators[new_validator_position].weight =
+                new_validator.weight.checked_add(changed_weight).unwrap();
+            config.validators[old_validator_position].weight =
+                old_validator.weight.checked_sub(changed_weight).unwrap();
         } else {
             // New validator address is not in the list
             let new_validator_weight = changed_weight;
@@ -978,7 +943,7 @@ pub fn try_redelegate(
         &(ExecuteResponse::Redelegate {
             amount: Uint128::new(can_redelegate),
             status: ResponseStatus::Success,
-        })
+        }),
     )?;
 
     return Ok(Response::new().add_messages(messages).set_data(answer));
@@ -992,20 +957,21 @@ fn query_config(deps: Deps) -> StdResult<QueryResponse> {
 pub fn query_user_info(deps: Deps, address: String) -> StdResult<QueryResponse> {
     let config = CONFIG_ITEM.load(deps.storage)?;
     let min_tier = config.min_tier();
-    let user_info = USER_INFOS.may_load(deps.storage, address)?.unwrap_or(state::UserInfo {
-        tier: min_tier,
-        ..Default::default()
-    });
+    let user_info = USER_INFOS
+        .may_load(deps.storage, address)?
+        .unwrap_or(state::UserInfo {
+            tier: min_tier,
+            ..Default::default()
+        });
 
     let answer = user_info.to_answer();
     return Ok(answer);
 }
 
 pub fn query_user_total_delegated(deps: Deps, address: String) -> StdResult<QueryResponse> {
-    let user_total_delegated = USER_TOTAL_DELEGATED.may_load(
-        deps.storage,
-        address
-    )?.unwrap_or_default();
+    let user_total_delegated = USER_TOTAL_DELEGATED
+        .may_load(deps.storage, address)?
+        .unwrap_or_default();
     let answer = msg::QueryResponse::UserTotalDelegated {
         total_delegated: user_total_delegated,
     };
@@ -1016,9 +982,11 @@ pub fn query_withdrawals(
     deps: Deps,
     address: String,
     start: Option<u32>,
-    limit: Option<u32>
+    limit: Option<u32>,
 ) -> StdResult<QueryResponse> {
-    let withdrawals = WITHDRAWALS_LIST.may_load(deps.storage, address)?.unwrap_or_default();
+    let withdrawals = WITHDRAWALS_LIST
+        .may_load(deps.storage, address)?
+        .unwrap_or_default();
     let amount = withdrawals.len();
 
     // The number of withdrawals can't exceed 50.
